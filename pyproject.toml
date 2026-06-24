@@ -15,12 +15,14 @@ dependencies = [
     "httpx",
     "tenacity",
     "typer",
-    "open-clip-torch",
-    "torch",
     "anthropic",
     "openai",
     "google-generativeai",
 ]
+
+[project.optional-dependencies]
+clip = ["torch", "open-clip-torch"]
+dev = ["pytest", "pytest-asyncio", "ruff"]
 
 [project.scripts]
 da = "directoragent.cli:app"
