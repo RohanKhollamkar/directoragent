@@ -10,18 +10,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2",
-    "pydantic-settings>=2",
+    "pydantic-settings",
     "aiosqlite",
     "httpx",
     "tenacity",
     "typer",
-]
-
-[project.optional-dependencies]
-dev = [
-    "ruff",
-    "pytest",
-    "pytest-asyncio",
+    "open-clip-torch",
+    "torch",
+    "anthropic",
+    "openai",
+    "google-generativeai",
 ]
 
 [project.scripts]
@@ -32,3 +30,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 directoragent = ["*.sql"]
+
+[tool.ruff]
+target-version = "py311"
