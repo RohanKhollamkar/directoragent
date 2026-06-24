@@ -82,7 +82,7 @@ async def main() -> None:
     )
     await store.open_attempt(attempt)              # -> SUBMITTING (durable pre-network)
     await store.record_job_id("att_1", "job_abc")  # -> RUNNING + job_id
-    new_total = await store.add_cost("run_smoke", 1.80)
+    await store.add_cost("run_smoke", 1.80)
 
     # --- reconstruct from disk and assert -----------------------------------
     loaded = await store.load_run("run_smoke")

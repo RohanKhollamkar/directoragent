@@ -32,7 +32,7 @@ jobs:
         run: ruff check .
 
       - name: Tests (includes invariant gates)
-        run: pytest -q
+        run: python -m pytest -q
 
       # Working-state proof: the whole pipeline must run end to end in mock mode.
       - name: Mock pipeline smoke

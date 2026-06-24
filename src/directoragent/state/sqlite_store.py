@@ -21,7 +21,6 @@ from directoragent.schema import (
     AttemptStatus,
     Reference,
     RunState,
-    RunStatus,
     SceneModel,
     Shot,
 )
