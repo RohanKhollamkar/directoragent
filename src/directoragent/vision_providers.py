@@ -16,7 +16,7 @@ import mimetypes
 from pathlib import Path
 from typing import Protocol
 
-from schema import SceneModel  # only used by the mock to emit a valid shape
+from directoragent.schema import SceneModel  # only used by the mock to emit a valid shape
 
 
 class VisionProvider(Protocol):

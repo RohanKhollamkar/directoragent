@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "directoragent"
+version = "0.1.0"
+description = "One photo + scene description -> 6-shot production storyboard via Higgsfield MCP."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2",
+    "pydantic-settings",
+    "aiosqlite",
+    "httpx",
+    "tenacity",
+    "typer",
+    "open-clip-torch",
+    "torch",
+    "anthropic",
+    "openai",
+    "google-generativeai",
+]
+
+[project.scripts]
+da = "directoragent.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+directoragent = ["*.sql"]
+
+[tool.ruff]
+target-version = "py311"
