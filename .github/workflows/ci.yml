@@ -1,0 +1,54 @@
+name: ci
+
+# The deterministic backbone. Runs on every push and PR. Cannot be argued
+# with — if this is red, the code is not safe to merge, regardless of what
+# any review says. Mock mode means this needs NO credentials and NO torch.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Light install: core deps + dev tools, NO torch/open-clip.
+      # This works because mock mode never imports CLIP, and the package
+      # lazy-loads torch. See the dependency-split note in VERIFICATION.md.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests (includes invariant gates)
+        run: pytest -q
+
+      # Working-state proof: the whole pipeline must run end to end in mock mode.
+      - name: Mock pipeline smoke
+        run: |
+          mkdir -p assets
+          python - <<'PY'
+          import base64, pathlib
+          # 1x1 PNG so the CLI has a real file path; MockVisionProvider ignores contents.
+          png = base64.b64decode(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+          )
+          pathlib.Path("assets/test.png").write_bytes(png)
+          PY
+          da run assets/test.png "ci smoke run" --mock --run-id ci-smoke
+          test -f .directoragent/runs/ci-smoke/storyboard.json
+
+      # Resume must be a no-op on an already-complete run (no new attempts).
+      - name: Mock resume is idempotent
+        run: da resume ci-smoke --mock
