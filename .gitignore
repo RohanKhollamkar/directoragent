@@ -1,0 +1,4 @@
+.env
+.directoragent/
+__pycache__/
+.venv/

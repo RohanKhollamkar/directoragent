@@ -8,7 +8,7 @@ concrete client.
 
 from typing import Protocol
 
-from schema import Attempt, RunState, SceneModel, Shot
+from directoragent.schema import Attempt, RunState, SceneModel, Shot
 
 
 # --- Phase 1 -----------------------------------------------------------------

@@ -6,7 +6,7 @@ assign shot_types and write prompts; the mapping to a model is mechanical
 and auditable.
 """
 
-from schema import Model, ShotType
+from directoragent.schema import Model, ShotType
 
 
 # --- Model routing ----------------------------------------------------------
