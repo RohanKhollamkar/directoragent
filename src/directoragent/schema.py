@@ -12,10 +12,10 @@ from pydantic import BaseModel, Field
 
 
 # --- Routing categories -----------------------------------------------------
-# shot_type is the routing key. It deterministically selects a model
+# render_class is the routing key. It deterministically selects a model
 # (see routing.py) and a drift threshold. Keep this set tight so routing
 # stays a lookup, not a decision.
-class ShotType(str, Enum):
+class RenderClass(str, Enum):
     FACE = "face"                       # -> Soul v2 / Cinema
     COMPLEX_MOTION = "complex_motion"   # -> Kling 3.0
     ABSTRACT_FLUID = "abstract_fluid"   # -> Wan 2.6
@@ -64,7 +64,8 @@ class Shot(BaseModel):
     """One shot in the 6-shot arc. Immutable once planned."""
     shot_id: str
     shot_name: str
-    shot_type: ShotType
+    shot_style: str          # free LLM-chosen cinematic descriptor, no routing meaning
+    render_class: RenderClass  # closed routing key -> model + drift threshold
     narrative_beat: str
     model: Model
     model_reason: str
@@ -74,7 +75,7 @@ class Shot(BaseModel):
     reference: Reference
     duration_s: float
     quality: QualityTier = QualityTier.STANDARD
-    min_drift_score: float   # set from DRIFT_THRESHOLDS[shot_type]
+    min_drift_score: float   # set from DRIFT_THRESHOLDS[render_class]
 
 
 # --- Phases 3 & 4: execution log --------------------------------------------

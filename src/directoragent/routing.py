@@ -1,54 +1,54 @@
 """Deterministic configuration: routing, drift thresholds, cost model.
 
 This file is the reason "the planner" isn't an LLM decision for model
-selection — shot_type -> model is a lookup. The LLM's job in Phase 2 is to
-assign shot_types and write prompts; the mapping to a model is mechanical
+selection — render_class -> model is a lookup. The LLM's job in Phase 2 is to
+assign render_classes and write prompts; the mapping to a model is mechanical
 and auditable.
 """
 
-from directoragent.schema import Model, ShotType
+from directoragent.schema import Model, RenderClass
 
 
 # --- Model routing ----------------------------------------------------------
-# shot_type -> (model, reason). reason is stored on the Shot as model_reason
+# render_class -> (model, reason). reason is stored on the Shot as model_reason
 # so the storyboard metadata explains every routing choice.
-ROUTING: dict[ShotType, tuple[Model, str]] = {
-    ShotType.FACE: (
+ROUTING: dict[RenderClass, tuple[Model, str]] = {
+    RenderClass.FACE: (
         Model.SOUL_V2,
         "Face-centric shot: Soul v2/Cinema for identity-faithful character rendering.",
     ),
-    ShotType.COMPLEX_MOTION: (
+    RenderClass.COMPLEX_MOTION: (
         Model.KLING_3,
         "Complex subject/camera motion: Kling 3.0 for motion coherence.",
     ),
-    ShotType.ABSTRACT_FLUID: (
+    RenderClass.ABSTRACT_FLUID: (
         Model.WAN_2_6,
         "Abstract/fluid imagery: Wan 2.6 for non-rigid, fluid dynamics.",
     ),
-    ShotType.WIDE_ENVIRONMENT: (
+    RenderClass.WIDE_ENVIRONMENT: (
         Model.VEO_3_1,
         "Wide environment establishing shot: Veo 3.1 for scene-scale fidelity.",
     ),
 }
 
 
-def route(shot_type: ShotType) -> tuple[Model, str]:
-    return ROUTING[shot_type]
+def route(render_class: RenderClass) -> tuple[Model, str]:
+    return ROUTING[render_class]
 
 
-# --- Drift thresholds (per shot_type) ---------------------------------------
+# --- Drift thresholds (per render_class) ------------------------------------
 # Tighter for faces (identity must hold), looser for abstract (more variance
 # is acceptable). These become Shot.min_drift_score.
-DRIFT_THRESHOLDS: dict[ShotType, float] = {
-    ShotType.FACE: 0.78,
-    ShotType.COMPLEX_MOTION: 0.72,
-    ShotType.ABSTRACT_FLUID: 0.65,
-    ShotType.WIDE_ENVIRONMENT: 0.70,
+DRIFT_THRESHOLDS: dict[RenderClass, float] = {
+    RenderClass.FACE: 0.78,
+    RenderClass.COMPLEX_MOTION: 0.72,
+    RenderClass.ABSTRACT_FLUID: 0.65,
+    RenderClass.WIDE_ENVIRONMENT: 0.70,
 }
 
 
-def drift_threshold(shot_type: ShotType) -> float:
-    return DRIFT_THRESHOLDS[shot_type]
+def drift_threshold(render_class: RenderClass) -> float:
+    return DRIFT_THRESHOLDS[render_class]
 
 
 # --- Cost model -------------------------------------------------------------
