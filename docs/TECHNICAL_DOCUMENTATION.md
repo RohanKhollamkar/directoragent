@@ -400,6 +400,47 @@ and what is free to vary.
   reference. Text guides; image + drift enforces. (This is why the planner is
   given the photo, not only the flattened `subject` string.)
 
+### Camera motion & motion presets — LOCKED (motion_preset provisional, reconciled at P12)
+
+Two fields describe the same physical camera move at different levels, mirroring
+the shot_style/render_class split one level down:
+
+- **`camera_motion`** — free-text prose ("slow push-in toward her face"); feeds
+  the filmable prompt. Permanently free; never maps to an API enum.
+- **`motion_preset`** — a closed value the real Higgsfield adapter maps to a
+  parameter. The planner writes `camera_motion` expressively, then selects the
+  `motion_preset` that best matches it.
+
+**Provisional vocabulary (v1):** PUSH_IN, PULL_OUT, PAN_LEFT, PAN_RIGHT, TILT_UP,
+TILT_DOWN, ORBIT, STATIC, HANDHELD, CRANE. Invalid/absent → fall back to STATIC.
+
+**Why the provisional set lives in mutable code:** the schema already types
+`motion_preset` as a string and schema.sql stores it as TEXT, so **no foundation
+change is needed**. The closed vocabulary lives in a non-frozen planner module
+(`phases/motion.py`) precisely *because* it is provisional. `render_class` is
+frozen (core, stable, tied to the model roster); `motion_preset` is not
+(provisional, tied to an unknown external vocabulary). The distinction is
+deliberate.
+
+**P12 reconciliation:** the real Higgsfield presets are inspected at P12 and the
+provisional names are mapped onto them (renamed to match if needed). Blast radius
+is contained — it touches `phases/motion.py`, the real adapter's mapping, and the
+planner allowed-list; **nothing** in the executor, store, or assembler, which
+pass `motion_preset` through opaquely. The obligation is encoded in **three
+places** so it survives to P12: this document (§11), the P12 build prompt, and a
+`TODO(P12)` marker on the vocabulary definition and in the real adapter stub. A
+provisional decision survives not by memory but by markers at the worksite.
+
+### Mock-mode planning
+
+`MockVisionProvider` returns a canned SceneModel and cannot serve the planner,
+which needs a six-shot plan. Mock mode therefore uses a dedicated
+`MockPlanProvider` (a VisionProvider that returns a canned plan), selected at the
+pipeline injection point — vision gets `MockVisionProvider`, the planner gets
+`MockPlanProvider`. Each mock stays single-purpose and no `if mock` branch leaks
+into the phases. `MockPlanProvider` is non-frozen (not part of
+vision_providers.py).
+
 ---
 
 ## 8. Verification harness
@@ -466,6 +507,7 @@ generation from P12.
 | Scene model **and** photo to the planner | Groundedness is the product premise; the small token cost is justified by visually faithful shots. |
 | shot_style / render_class split | Unbounded creative vocabulary while routing stays deterministic and the LLM never picks the model. |
 | Named swappable arc templates | Supports non-action scenes; makes default/named/user-defined arcs one code path; surfaces the arc to the user. |
+| camera_motion free-text + motion_preset provisional closed enum | Same move, two representations: expressive prose for the prompt, a mappable value for the API. Mirrors shot_style/render_class. The provisional set lives in mutable planner code, not the frozen schema, because it reconciles against Higgsfield's real presets at P12. |
 | Plan-review checkpoint before spend | User sees the exact Higgsfield prompts and approves before any paid generation; aligns with the cost-ceiling philosophy. |
 | Two separate retry mechanisms | Prevents double-counted cost and swallowed quality failures; keeps metrics meaningful. |
 
@@ -480,6 +522,7 @@ generation from P12.
 | User-defined custom arcs | The template mechanism is built v1 (default + named); accepting arbitrary user beat-lists is additive and not needed to prove the concept. Stubbed behind the same arc interface. |
 | Shot-to-shot chaining (PREVIOUS_SHOT references at generation time) | True chaining serialises parts of the fan-out and introduces an ordering dependency. v1 resolves all generation references to the source photo and records reference.type as metadata only, keeping the fan-out fully parallel. |
 | Automated shot_style↔render_class consistency check | Trusting the validated render_class is simpler and avoids false corrections from a brittle classifier. Prevention (prompt rubric), detection (plan review), and containment (retry + cost ceiling) cover the gap. Build only if real runs show a high mismatch rate — failure data should drive the design. |
+| motion_preset ↔ Higgsfield preset reconciliation (P12) | The real preset vocabulary is unknown until the MCP is inspected. A generous provisional enum of common camera moves gives determinism through the mock phase with a high-probability-clean mapping later. Low blast radius (motion module + adapter mapping + planner list; no executor/store/assembler change). Encoded in this doc, the P12 prompt, and TODO(P12) code markers so it survives to P12. |
 | render_class expansion beyond four | Cardinality tracks the model roster; four models exist today. Adding a class is a localized, on-demand routine (see §12), not a v1 concern. |
 | Postgres backend | The StateStore protocol makes it a config-time swap; SQLite covers development and the demo. |
 | Cost-model calibration | COST_PER_SECOND values are placeholders until validated against real Higgsfield pricing; required before trusting `--max-cost` in real mode. |
@@ -499,6 +542,9 @@ generation from P12.
 - **Add an arc template:** add a named six-beat list (name/intent/render_lean
   per beat) to the arc library module. The planner consumes it as data; no
   prompt rewrite, no routing change, no foundation touch.
+- **Add a motion preset:** add the value to `phases/motion.py` and the planner
+  allowed-list. At P12, ensure it maps to a real Higgsfield preset. No
+  foundation touch.
 - **Swap mock for real generation/scoring:** controlled entirely by
   `settings.mock_mode` at the pipeline injection point. No `if mock` branches
   are permitted inside phases.
