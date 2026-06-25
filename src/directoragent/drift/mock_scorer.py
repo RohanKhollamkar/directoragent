@@ -3,7 +3,7 @@
 Synthetic CLIP-style scores so --mock skips torch/open_clip entirely.
 Implements the DriftScorer Protocol.
 
-score() receives only (reference_path, candidate_url) — no shot_type, no
+score() receives only (reference_path, candidate_url) — no render_class, no
 threshold — so it can't know what "passing" means for a given shot. Instead
 it's seeded to fail deterministically: the first `fail_first` calls return a
 score below every threshold, and every call after returns a score above the

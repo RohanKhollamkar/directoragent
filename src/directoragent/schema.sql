@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS shots (
     run_id          TEXT NOT NULL REFERENCES runs(run_id),
     shot_id         TEXT NOT NULL,
     shot_name       TEXT NOT NULL,
-    shot_type       TEXT NOT NULL,
+    shot_style      TEXT NOT NULL,        -- free LLM-chosen cinematic descriptor
+    render_class    TEXT NOT NULL,        -- closed routing key -> model + drift threshold
     narrative_beat  TEXT NOT NULL,
     model           TEXT NOT NULL,
     model_reason    TEXT NOT NULL,

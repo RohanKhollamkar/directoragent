@@ -17,20 +17,21 @@ from directoragent.schema import (
     QualityTier,
     Reference,
     ReferenceType,
+    RenderClass,
     RunState,
     RunStatus,
     SceneModel,
     Shot,
-    ShotType,
 )
 from directoragent.state.sqlite_store import SqliteStateStore
 
 
-def _shot(shot_id: str, name: str, shot_type: ShotType, model: Model, drift: float) -> Shot:
+def _shot(shot_id: str, name: str, render_class: RenderClass, model: Model, drift: float) -> Shot:
     return Shot(
         shot_id=shot_id,
         shot_name=name,
-        shot_type=shot_type,
+        shot_style="establishing wide",
+        render_class=render_class,
         narrative_beat="a beat",
         model=model,
         model_reason="because",
@@ -56,8 +57,8 @@ async def main() -> None:
         objects=["umbrella"],
         color_palette=["#0a0e1a"],
     )
-    shot1 = _shot("shot_1", "Establish", ShotType.WIDE_ENVIRONMENT, Model.VEO_3_1, 0.70)
-    shot2 = _shot("shot_2", "Close", ShotType.FACE, Model.SOUL_V2, 0.78)
+    shot1 = _shot("shot_1", "Establish", RenderClass.WIDE_ENVIRONMENT, Model.VEO_3_1, 0.70)
+    shot2 = _shot("shot_2", "Close", RenderClass.FACE, Model.SOUL_V2, 0.78)
 
     state = RunState(
         run_id="run_smoke",

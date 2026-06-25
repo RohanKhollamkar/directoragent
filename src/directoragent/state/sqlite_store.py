@@ -100,15 +100,16 @@ class SqliteStateStore:
     async def save_shot(self, run_id: str, shot: Shot) -> None:
         conn = await self._connection()
         await conn.execute(
-            "INSERT INTO shots (run_id, shot_id, shot_name, shot_type, "
+            "INSERT INTO shots (run_id, shot_id, shot_name, shot_style, render_class, "
             "narrative_beat, model, model_reason, camera_motion, motion_preset, "
             "prompt, reference_json, duration_s, quality, min_drift_score) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id,
                 shot.shot_id,
                 shot.shot_name,
-                shot.shot_type.value,
+                shot.shot_style,
+                shot.render_class.value,
                 shot.narrative_beat,
                 shot.model.value,
                 shot.model_reason,
@@ -226,7 +227,8 @@ class SqliteStateStore:
         return Shot(
             shot_id=r["shot_id"],
             shot_name=r["shot_name"],
-            shot_type=r["shot_type"],
+            shot_style=r["shot_style"],
+            render_class=r["render_class"],
             narrative_beat=r["narrative_beat"],
             model=r["model"],
             model_reason=r["model_reason"],
