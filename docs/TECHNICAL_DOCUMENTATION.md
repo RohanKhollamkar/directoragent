@@ -70,7 +70,7 @@ those hashes in the same commit, which makes any modification visible in review.
 | File | Satisfies | Status |
 |---|---|---|
 | `vision_providers.py` | VisionProvider transports (OpenAI/Anthropic/Gemini/Mock) + `make_provider()` | Foundation, frozen |
-| `phases/vision.py` | VisionClient (wraps a VisionProvider; prompt + parse + validate + repair) | Planned (P5) |
+| `phases/vision.py` | VisionClient (wraps a VisionProvider; prompt + parse + validate + repair) | Built (P5) |
 | `state/sqlite_store.py` | StateStore (aiosqlite, Level-1 ledger) | Built (P2) |
 | `clients/higgsfield_mock.py` | HiggsfieldClient (no network; supports reconcile) | Built (P3a) |
 | `clients/higgsfield.py` | HiggsfieldClient (real MCP adapter, tenacity transient-retry) | Planned (P12) |
@@ -81,11 +81,14 @@ those hashes in the same commit, which makes any modification visible in review.
 
 | File | Role | Status |
 |---|---|---|
-| `phases/planner.py` | SceneModel + photo ─► 6 × Shot; arc skeleton + deterministic routing | Planned (P6) |
-| `phases/executor.py` | Fan-out, submit/poll, drift scoring, quality-retry, resume | Planned (P7) |
-| `phases/assembler.py` | RunState ─► Storyboard; metrics; shot grid; storyboard.json | Planned (P8) |
-| `pipeline.py` | Wires the five phases; owns the cost ceiling; selects mock vs real impls | Planned (P9) |
-| `cli.py` | Typer app: run / resume / status / list; constructs Settings; prints run_id | Planned (P10) |
+| `phases/arcs.py` | Arc library (4 arcs × 6 beats with soft render_leans); non-frozen data | Built (P6) |
+| `phases/motion.py` | Provisional motion-preset vocabulary; non-frozen; TODO(P12) | Built (P6) |
+| `phases/mock_plan_provider.py` | Canned 6-shot plan for mock-mode planning | Built (P6) |
+| `phases/planner.py` | SceneModel + photo ─► 6 × Shot; arc selection + guard + deterministic routing | Built (P6) |
+| `phases/executor.py` | Fan-out, submit/poll, drift scoring, quality-retry, resume | Built (P7) |
+| `phases/assembler.py` | RunState ─► Storyboard; metrics; shot grid; storyboard.json | Built (P8) |
+| `pipeline.py` | Wires the five phases; owns the cost ceiling; selects mock vs real impls; resume-based plan-review | Built (P9) |
+| `cli.py` | Typer app: run / resume / status / list; --arc, --review; prints run_id | Planned (P10) |
 | `config.py` | pydantic-settings Settings; constructed once at the CLI boundary | Built (P1) |
 
 ### Layer D — Verification
@@ -465,6 +468,26 @@ mode and tests install in seconds with no 2GB download. The lazy-load design
 (torch imported only inside the CLIP scorer, never at module level) is what makes
 this possible and is itself an enforced invariant.
 
+### The CI mock pipeline (`.github/workflows/ci.yml`)
+
+On every push and PR, CI runs, in order: `ruff check`, `pytest` (which includes
+`test_invariants.py`), then an **end-to-end mock pipeline run** (`da run … --mock`
+against a generated 1×1 test image) asserting `storyboard.json` is written, then
+an **idempotent resume** (`da resume … --mock`) asserting no new work. No
+credentials, no torch. This is the backbone that proves *working state* — that
+the whole photo→storyboard chain actually executes, not just that units pass.
+
+**Guarded skip until the CLI exists.** The two pipeline steps are gated on
+`src/directoragent/cli.py` being present (with a `command -v da` secondary check).
+Before STEP 10 they skip cleanly so CI stays green on what exists; the lint and
+test steps always run unconditionally. **STEP 10 (cli.py) is the milestone that
+flips these steps from skip to run** — the first push after `cli.py` lands is the
+first time the full pipeline executes in CI, so wiring issues in the end-to-end
+path surface there. Gating on the source file (not only `command -v da`) is
+deliberate: `pip install -e .` generates the `da` console-script wrapper from the
+entry point *before* `cli.py` is written, so the command check alone would report
+a false positive.
+
 ---
 
 ## 9. Build sequence & current status
@@ -477,15 +500,15 @@ this possible and is itself an enforced invariant.
 | P2 | state/sqlite_store.py | ✅ Done |
 | P3a | clients/higgsfield_mock.py | ✅ Done |
 | P4a | drift/mock_scorer.py | ✅ Done |
-| — | **shot_style / render_class split** | ⏳ Decided, implement before P6 |
-| P5 | phases/vision.py | ▶ Next |
-| P6 | phases/planner.py (arc library + split + routing) | Planned |
-| P7 | phases/executor.py | Planned |
-| P8 | phases/assembler.py | Planned |
-| P9 | pipeline.py | Planned |
-| P10 | cli.py (incl. plan-review checkpoint) | Planned |
+| — | shot_style / render_class split | ✅ Done |
+| P5 | phases/vision.py | ✅ Done |
+| P6 | phases/planner.py + arcs.py + motion.py + mock_plan_provider.py | ✅ Done |
+| P7 | phases/executor.py | ✅ Done |
+| P8 | phases/assembler.py | ✅ Done |
+| P9 | pipeline.py (+ per-attempt cost persistence in executor) | ✅ Done |
+| P10 | cli.py (--arc, --review; flips CI mock-pipeline skip→run) | ▶ Next |
 | P11 | test suite | Planned |
-| P12 | clients/higgsfield.py (real MCP) | Planned |
+| P12 | clients/higgsfield.py (real MCP + motion reconciliation) | Planned |
 | P13 | drift/clip_scorer.py (real CLIP) | Planned |
 | P14 | README, finalize, full integrity sweep | Planned |
 
