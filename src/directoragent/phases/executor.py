@@ -119,6 +119,10 @@ async def run_shot(
             new_total = await store.add_cost(state.run_id, projected)  # ONCE per submission
             state.total_cost = new_total
             attempt.cost = projected
+            # Persist the per-attempt cost too, so a reloaded RunState (and the
+            # assembled storyboard) attributes cost per shot faithfully. This is
+            # NOT a second add_cost — the run total was already incremented once.
+            await store.update_attempt(attempt.attempt_id, cost=projected)
 
             await _poll_to_terminal(attempt, store, hf, scorer, state, shot)
             if attempt.status == AttemptStatus.PASSED:
