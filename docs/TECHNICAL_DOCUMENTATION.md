@@ -196,7 +196,7 @@ writer (WAL mode, busy_timeout) rather than racing a shared file.
 
 ---
 
-## 7. Routing & the shot_style / render_class split
+## 7. Planner design — routing, the style/class split, arcs, guard logic, and the prompt contract
 
 ### The problem this solves
 
@@ -206,24 +206,65 @@ threshold. That conflation caps creative vocabulary at the number of routing
 targets, which is wrong — cinematic variety is unbounded, routing targets are
 not.
 
-### The decision (LOCKED — pending implementation before P6)
+### The decision (LOCKED — schema/routing/storage implemented; guard logic at P6)
 
 Split the two jobs into two fields, "guarded-(a)":
 
 - **`shot_style`** — free-form text the LLM chooses with wide latitude
   (close-up, over-the-shoulder dolly, crane-out, abstract transition, …).
   Unbounded; adding values costs nothing.
-- **`render_class`** — a closed enum (currently FACE, COMPLEX_MOTION,
-  ABSTRACT_FLUID, WIDE_ENVIRONMENT) that is the routing key. The LLM proposes a
-  render_class per shot; the planner **validates** it against the closed set and
-  falls back to a default mapping if the LLM emits an unknown value. The model
-  is then derived deterministically via `route(render_class)` — the LLM never
-  picks the model, preserving the core invariant.
+- **`render_class`** — a closed enum (FACE, COMPLEX_MOTION, ABSTRACT_FLUID,
+  WIDE_ENVIRONMENT) that is the routing key. The LLM proposes a render_class per
+  shot; the planner **validates** it (see guard logic) and the model is derived
+  deterministically via `route(render_class)` — the LLM never picks the model.
 
-Recommended implementation is to rename the existing `shot_type` → `render_class`
-for clarity and add `shot_style`. The lower-churn alternative (keep `shot_type`
-as the routing key, only add `shot_style`) is acceptable if minimum blast radius
-is preferred; in that case `shot_type` is documented as "the routing class."
+Implemented as a rename of `shot_type` → `render_class` plus a new `shot_style`
+field across schema.py, routing.py, schema.sql, and the SQLite store.
+
+### Guard logic (guarded-(a)) — LOCKED, implemented at P6
+
+For every shot the planner sets `render_class` **first**, then derives
+`model, model_reason = route(render_class)` and
+`min_drift_score = drift_threshold(render_class)`. The LLM proposes a
+render_class but never names a model or sets a threshold; the routing table is
+the only thing that turns a class into a model. This holds across all paths
+below, so the "LLM never sets model" invariant is intact.
+
+**Invalid / malformed render_class → fall back to the beat's `render_lean`:**
+1. Normalize the proposed value (lowercase, trim, match the four enum members).
+   This absorbs harmless case/whitespace noise.
+2. If it still does not resolve → use the beat's `render_lean` (always a valid,
+   arc-coherent default). The fallback is **recorded as a visible note on the
+   shot** so the plan-review checkpoint surfaces it. No `shot_style` keyword
+   parsing is used to recover a fallback — that would reintroduce the brittle
+   classifier discussed below.
+
+**Valid-but-inconsistent render_class (e.g. style "extreme wide aerial" tagged
+FACE) → trust the validated value; do NOT auto-correct.** A `shot_style →
+render_class` classifier is deliberately avoided in v1 because it introduces
+*false* corrections (overriding render_classes the LLM got right for subtle
+reasons) and degrades routing accuracy under the guise of safety. Instead,
+consistency is handled by three cheaper layers:
+- **Prevention (prompt):** the planner prompt gives the LLM a one-line rubric
+  per render_class and requires the class to match the shot's scale/subject, so
+  coherent output is the default.
+- **Detection (human):** the plan-review checkpoint shows every shot's
+  shot_style + render_class + model before any paid generation.
+- **Containment (machinery):** a genuinely misrouted shot fails drift, exhausts
+  the bounded retry budget, and is flagged failed by the assembler — bounded,
+  visible waste capped by the cost ceiling.
+
+The automated consistency-check is **deferred, gated on observed mismatch rate**
+(see §11): if real runs show frequent mismatches, that failure data justifies
+building it; until then it is speculative complexity.
+
+### render_class count — the criticality call
+
+`render_class` cardinality tracks the number of **meaningfully distinct
+generation models**, not the number of shot ideas. Four models exist today, so
+four classes is correct. Adding a fifth is a low-urgency, additive operation
+(routing.py + planner allowed-list + tests + hashes; no hard-file changes) and
+is performed only when Higgsfield's model roster genuinely grows. See §12.
 
 ### render_class count — the criticality call
 
@@ -276,6 +317,88 @@ meant to grow; adding one is a pure data addition with zero ripple. The
 `route(render_class)` does. The user-defined-arc mode (accepting an arbitrary
 caller-supplied beat list through the same interface) is **stubbed for later**
 (see §11).
+
+### Filmable-prompt contract — LOCKED, implemented at P6
+
+Each shot's `prompt` is effectively a Higgsfield generation prompt. The contract
+forces it to describe what a camera literally captures — present-tense, no
+interiority — rather than a narrative logline. An LLM left unconstrained drifts
+toward plot ("she confronts her past"); the rubric pulls it back to the camera.
+
+**Length:** 2–4 sentences, dense with visual nouns and verbs, no narrative
+connective tissue.
+
+**Required elements (representational shots):**
+1. Subject + concrete observable action ("the subject turns toward the window,"
+   not "the subject feels uncertain").
+2. Framing / shot scale (close-up, medium, wide). This is where `shot_style`
+   connects to the prompt text.
+3. Camera movement (push-in, dolly, pan, static hold, crane-out). Must agree
+   with the shot's `camera_motion` / `motion_preset` fields.
+4. Lighting / atmosphere, drawn from the scene model's lighting and mood.
+5. Setting anchor within the established environment, so the six shots read as
+   one place rather than six unrelated images.
+
+**ABSTRACT_FLUID exemption:** these shots have no subject-action by nature.
+Element 1 is replaced by "visual motif + motion quality," and the setting anchor
+(element 5) is relaxed. Framing, camera movement, and lighting/atmosphere still
+apply.
+
+**Negative instruction (stated explicitly in the prompt):** no internal states,
+no plot or backstory, no unfilmable abstractions, no dialogue. A prompt that
+reads as a logline is rejected.
+
+**Few-shot anchor:** the planner prompt includes a concrete contrast pair, e.g.
+— Unfilmable: *"The detective realizes she's been betrayed."*
+— Filmable: *"Medium close-up, slow push-in on the detective's face under a
+single overhead bulb; her eyes shift left, jaw tightening; cold blue light, deep
+shadows behind."*
+Examples move LLM behavior more reliably than rules alone.
+
+**Empirical tuning:** the prompt is a strong starting point, not a final answer.
+The planner is the one component expected to need a round or two of tuning on
+real photos after P6 (filmability, groundedness, prompt length). That tuning is
+a design loop (decided in the brainstorming context, not improvised in code),
+and length in particular is a knob to revisit once Higgsfield's real model
+response is observed at P12.
+
+### Groundedness contract — LOCKED, implemented at P6
+
+Groundedness is **graded, not binary** — over-binding produces stiff, repetitive
+near-photocopies that fight the generation; under-binding breaks the
+consistent-character premise. The contract is explicit about what stays stable
+and what is free to vary.
+
+**Three tiers of binding:**
+1. **Subject identity — stable** across all representational shots. Every
+   FACE / COMPLEX_MOTION / WIDE_ENVIRONMENT prompt references the established
+   subject so it reads as the same character. Non-negotiable.
+2. **Palette & lighting — anchored, modulating with the beat.** The scene
+   model's lighting/palette/mood set the world; shots stay inside it but may
+   shift contrast/intensity for dramatic beats. Anchored, not locked.
+3. **Framing, angle, action, in-frame content — free** to vary per shot. This
+   is where cinematic variety lives and must not be bound.
+
+**Beat-dependent application** (parallels the filmable-rubric exemption):
+- FACE / COMPLEX_MOTION → full subject binding + palette anchor.
+- WIDE_ENVIRONMENT → lighter subject binding (subject may be contextual/small),
+  palette anchor emphasized to establish the world.
+- ABSTRACT_FLUID → subject binding dropped; the palette/mood anchor becomes the
+  primary groundedness, so the interlude reads as the same world.
+
+**Two principles that keep this non-arbitrary:**
+- *The contract is the textual twin of the per-class drift thresholds.* FACE is
+  bound tight in text and scored at 0.78; ABSTRACT_FLUID is relaxed in text and
+  scored at 0.65; WIDE_ENVIRONMENT sits between at 0.70. Prose guidance and
+  numeric enforcement express the same grading and must stay consistent — retune
+  a threshold, move the wording with it.
+- *The reference image, not the text, is the primary identity carrier.* Each
+  Higgsfield job receives the source photo as a reference and CLIP drift scoring
+  enforces fidelity against it. So the textual subject anchor is **concise** —
+  enough to keep the shot coherent and direct the action — and does **not**
+  exhaustively redescribe appearance, which can conflict with the image
+  reference. Text guides; image + drift enforces. (This is why the planner is
+  given the photo, not only the flattened `subject` string.)
 
 ---
 
@@ -356,6 +479,7 @@ generation from P12.
 | Real CLIP scorer (P13) | Same mock-first reasoning; torch is heavy and only needed for real drift scoring. |
 | User-defined custom arcs | The template mechanism is built v1 (default + named); accepting arbitrary user beat-lists is additive and not needed to prove the concept. Stubbed behind the same arc interface. |
 | Shot-to-shot chaining (PREVIOUS_SHOT references at generation time) | True chaining serialises parts of the fan-out and introduces an ordering dependency. v1 resolves all generation references to the source photo and records reference.type as metadata only, keeping the fan-out fully parallel. |
+| Automated shot_style↔render_class consistency check | Trusting the validated render_class is simpler and avoids false corrections from a brittle classifier. Prevention (prompt rubric), detection (plan review), and containment (retry + cost ceiling) cover the gap. Build only if real runs show a high mismatch rate — failure data should drive the design. |
 | render_class expansion beyond four | Cardinality tracks the model roster; four models exist today. Adding a class is a localized, on-demand routine (see §12), not a v1 concern. |
 | Postgres backend | The StateStore protocol makes it a config-time swap; SQLite covers development and the demo. |
 | Cost-model calibration | COST_PER_SECOND values are placeholders until validated against real Higgsfield pricing; required before trusting `--max-cost` in real mode. |
