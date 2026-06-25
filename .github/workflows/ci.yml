@@ -44,7 +44,7 @@ jobs:
             mkdir -p assets
             # 1x1 PNG so the CLI has a real file path; MockVisionProvider ignores contents.
             python -c "import base64, pathlib; pathlib.Path('assets/test.png').write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='))"
-            da run assets/test.png "ci smoke run" --mock --run-id ci-smoke
+            da run assets/test.png "ci smoke run" --mock --max-cost 50 --run-id ci-smoke
             test -f .directoragent/runs/ci-smoke/storyboard.json
           else
             echo "da CLI not built yet (src/directoragent/cli.py absent); skipping mock pipeline smoke"

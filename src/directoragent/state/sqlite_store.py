@@ -183,6 +183,16 @@ class SqliteStateStore:
         return float(row["total_cost"])
 
     # --- Read / resume ------------------------------------------------------
+    async def list_runs(self) -> list[tuple[str, str, float]]:
+        """All runs as (run_id, status, total_cost), oldest first. Used by the
+        CLI `list` command; not part of the StateStore Protocol."""
+        conn = await self._connection()
+        async with conn.execute(
+            "SELECT run_id, status, total_cost FROM runs ORDER BY created_at"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [(r["run_id"], r["status"], float(r["total_cost"])) for r in rows]
+
     async def load_run(self, run_id: str) -> RunState | None:
         conn = await self._connection()
 
