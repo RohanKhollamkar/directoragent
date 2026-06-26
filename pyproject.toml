@@ -36,6 +36,9 @@ directoragent = ["*.sql"]
 [tool.ruff]
 target-version = "py311"
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
 [tool.ruff.lint.per-file-ignores]
 # vision_providers.py is a frozen foundation file; its SceneModel import is
 # kept intentionally and must not be edited, so silence F401 there.
