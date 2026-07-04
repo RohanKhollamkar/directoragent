@@ -90,6 +90,16 @@ await store.record_job_id(attempt.attempt_id, jid)  # status=RUNNING
 The gap between open_attempt and record_job_id is the crash window.
 reconcile() covers it on resume. Never reorder these three lines.
 
+**Reconcile reality (P12 discovery):** the Higgsfield API accepts NO idempotency
+key on submit — it only knows job_ids it issued. So in the REAL adapter,
+`reconcile(idem_key)` is implemented as a content-fingerprint search: query
+recent generations (show_generations) and match on {model, prompt, params}
+(shot prompts are unique per attempt, so a recent match is the orphaned job).
+Recover its job_id, persist, re-poll. If the match is ambiguous or absent,
+fall back to a fresh submit (an accepted, rare double-charge). The mock still
+supports key-based reconcile directly. The Protocol signature is unchanged —
+only the real adapter's implementation differs.
+
 ### 3. route() and drift_threshold() called ONLY in the planner
 The LLM proposes a `render_class` (the closed routing key). routing.py maps
 `render_class → model` deterministically. The planner validates the proposed
@@ -129,11 +139,32 @@ needs no hash regeneration.
   `render_lean`). `render_lean` is a SOFT default; the planner may override it
   for a shot but must explain the deviation in `model_reason`. Add an arc by
   adding a named 6-beat list.
-- `phases/motion.py` — the provisional `motion_preset` vocabulary. **Carries a
-  `TODO(P12)` marker.** At STEP 12, reconcile these names against the real
-  Higgsfield motion presets (rename to match if needed), update the planner
-  allowed-list, and remove the TODO. No foundation/hash change — motion_preset
-  is typed as a plain string in schema/DDL precisely because it is provisional.
+- `phases/motion.py` — the `motion_preset` vocabulary. **TODO(P12) RESOLVED:**
+  the real API has NO camera-motion enum (motion is prompt/preset/motion_control
+  driven). `motion_preset` stays as internal metadata + a prompt hint: the REAL
+  adapter folds it into the generation prompt text (e.g. PUSH_IN → "slow
+  push-in"); it is NEVER a generate_video parameter. Keep the field — it is
+  reserved for a future mapping to Higgsfield preset_ids. Remove the TODO(P12)
+  marker when the real adapter lands.
+- `phases/model_limits.py` — real catalog duration constraints per Model
+  (Veo {4,6,8}; Wan {5,10,15}; Kling 3–15; Seedance 4–15) + `clamp_duration()`.
+  NON-FROZEN — tracks the live catalog via models_explore.
+
+## Duration rule (P12)
+The planner clamps each shot's `duration_s` to its routed model's allowed set
+AFTER route() assigns the model (the clamp needs the model, so it cannot happen
+in the LLM output). Log original vs clamped when they differ. There is NO hard
+total-duration bound — the old [60,180] gate is removed (model caps can make it
+unsatisfiable; e.g. six Veo shots max at 48s). Plan validation = exactly 6
+shots + valid render_classes only.
+
+## Cost units (P12)
+Higgsfield bills in CREDITS, and generate_video supports `get_cost: true` as a
+no-spend preflight. REAL mode: cost is denominated in credits via get_cost;
+the ceiling is a credit budget. MOCK mode: keeps the static placeholder
+COST_PER_SECOND table (arbitrary cost-units). `max_cost_usd` is a generic
+budget ceiling (name is a known misnomer in real mode; do not rename config
+without an approved reopening).
 
 ## Mock-mode planning
 `MockVisionProvider` returns a SceneModel and cannot serve the planner. Mock mode
@@ -184,7 +215,10 @@ RunStatus.ABORTED in DB, print clear message. Never silently swallow it.
 ```python
 # Routing (closed enum, the routing key)
 RenderClass: FACE | COMPLEX_MOTION | ABSTRACT_FLUID | WIDE_ENVIRONMENT
-Model:       SOUL_V2 | KLING_3 | WAN_2_6 | VEO_3_1
+Model:       SEEDANCE_2 | KLING_3 | WAN_2_6 | VEO_3_1
+# Internal names; the REAL adapter owns the mapping to catalog IDs
+# (seedance_2 → seedance_2_0, kling_3 → kling3_0, wan_2_6 → wan2_6,
+#  veo_3_1 → veo3_1). SOUL_V2 was renamed at P12.1 — no soul_v2 in the catalog.
 # Shot also carries shot_style: str  (free-form, LLM-chosen, NOT a routing key)
 
 # Attempt lifecycle
