@@ -11,7 +11,7 @@ from directoragent.schema import Model, RenderClass
 
 def test_route_maps_each_render_class_to_model():
     expected = {
-        RenderClass.FACE: Model.SOUL_V2,
+        RenderClass.FACE: Model.SEEDANCE_2,
         RenderClass.COMPLEX_MOTION: Model.KLING_3,
         RenderClass.ABSTRACT_FLUID: Model.WAN_2_6,
         RenderClass.WIDE_ENVIRONMENT: Model.VEO_3_1,
@@ -31,7 +31,7 @@ def test_drift_threshold_values():
 
 def test_estimate_cost_math():
     # estimate_cost = COST_PER_SECOND[model] * duration
-    assert estimate_cost(Model.SOUL_V2, 10) == COST_PER_SECOND[Model.SOUL_V2] * 10
+    assert estimate_cost(Model.SEEDANCE_2, 10) == COST_PER_SECOND[Model.SEEDANCE_2] * 10
     assert estimate_cost(Model.VEO_3_1, 18) == COST_PER_SECOND[Model.VEO_3_1] * 18
-    assert estimate_cost(Model.SOUL_V2, 0) == 0.0
+    assert estimate_cost(Model.SEEDANCE_2, 0) == 0.0
     assert abs(estimate_cost(Model.KLING_3, 22) - 0.14 * 22) < 1e-9
