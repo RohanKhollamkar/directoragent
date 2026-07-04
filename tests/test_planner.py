@@ -4,6 +4,7 @@ import json
 
 from directoragent.phases.arcs import get_arc
 from directoragent.phases.mock_plan_provider import MockPlanProvider
+from directoragent.phases.model_limits import clamp_duration
 from directoragent.phases.planner import plan
 from directoragent.routing import drift_threshold, route
 from directoragent.schema import Model, RenderClass, SceneModel
@@ -55,9 +56,22 @@ async def test_plan_returns_six_valid_shots():
         assert isinstance(s.render_class, RenderClass)
         assert s.model is route(s.render_class)[0]            # routed, not from provider
         assert s.min_drift_score == drift_threshold(s.render_class)
-        assert 8 <= s.duration_s <= 30
-    total = sum(s.duration_s for s in shots)
-    assert 60 <= total <= 180
+        # (a) final duration is valid for the routed model (clamp is idempotent)
+        assert clamp_duration(s.model, s.duration_s) == s.duration_s
+
+
+async def test_duration_clamps_veo_25_to_8():
+    # WIDE_ENVIRONMENT routes to VEO_3_1 (allowed {4,6,8}); 25 -> 8.
+    payload = [_shot(render_class="WIDE_ENVIRONMENT", duration_s=25)] + [_shot() for _ in range(5)]
+    shots = await plan(SCENE, "d", FakePlanProvider(payload), run_id="r")
+    assert shots[0].duration_s == 8
+
+
+async def test_duration_clamps_wan_12_to_10():
+    # ABSTRACT_FLUID routes to WAN_2_6 (allowed {5,10,15}); 12 -> nearest 10.
+    payload = [_shot(render_class="ABSTRACT_FLUID", duration_s=12)] + [_shot() for _ in range(5)]
+    shots = await plan(SCENE, "d", FakePlanProvider(payload), run_id="r")
+    assert shots[0].duration_s == 10
 
 
 async def test_invalid_render_class_falls_back_to_beat_lean():

@@ -15,6 +15,7 @@ import logging
 from pydantic import ValidationError
 
 from directoragent.phases.arcs import ARC_LIBRARY, DEFAULT_ARC, Beat, get_arc
+from directoragent.phases.model_limits import clamp_duration
 from directoragent.phases.motion import normalize_motion
 from directoragent.routing import drift_threshold, route
 from directoragent.schema import (
@@ -60,7 +61,7 @@ GROUNDEDNESS CONTRACT:
 - Framing, angle, action free to vary.
 - WIDE_ENVIRONMENT: lighter subject binding, emphasize establishing the world. ABSTRACT_FLUID: drop subject binding, keep the palette/mood anchor.
 
-DURATION: each shot 8-30s; total across 6 shots in [60, 180].
+DURATION: each shot 4-15s; wide/establishing shots (Veo) are short: 4-8s. Propose realistic per-shot durations — they are snapped to each model's allowed set.
 
 OUTPUT: respond with ONLY this JSON (no prose, no markdown fences), exactly 6 shots:
 {
@@ -73,7 +74,7 @@ OUTPUT: respond with ONLY this JSON (no prose, no markdown fences), exactly 6 sh
       "camera_motion": "free prose describing the camera move",
       "motion_preset": "PUSH_IN | PULL_OUT | PAN_LEFT | PAN_RIGHT | TILT_UP | TILT_DOWN | ORBIT | STATIC | HANDHELD | CRANE",
       "prompt": "the filmable prompt",
-      "duration_s": 20,
+      "duration_s": 8,
       "quality": "draft | standard | high"
     }
   ]
@@ -204,6 +205,20 @@ def _build_shots(raw: str, scene: SceneModel, beats: list[Beat]) -> list[Shot]:
         if notes:
             model_reason = f"{model_reason} | " + " | ".join(notes)
 
+        # Clamp the proposed duration to the routed model's allowed set. Needs
+        # the model, so it happens here (not in the LLM output). Log deviations
+        # so they surface at plan review.
+        proposed_duration = float(sd["duration_s"])
+        duration_s = clamp_duration(model, proposed_duration)
+        if duration_s != proposed_duration:
+            log.info(
+                "shot_%02d: duration clamped %gs -> %ds (%s)",
+                i + 1,
+                proposed_duration,
+                duration_s,
+                model.value,
+            )
+
         shots.append(
             Shot(
                 shot_id=f"shot_{i + 1:02d}",
@@ -219,7 +234,7 @@ def _build_shots(raw: str, scene: SceneModel, beats: list[Beat]) -> list[Shot]:
                 reference=Reference(
                     type=ReferenceType.SOURCE_PHOTO, source=scene.source_photo_path
                 ),
-                duration_s=float(sd["duration_s"]),
+                duration_s=duration_s,
                 quality=_resolve_quality(sd.get("quality")),
                 min_drift_score=min_drift,
             )
@@ -228,14 +243,13 @@ def _build_shots(raw: str, scene: SceneModel, beats: list[Beat]) -> list[Shot]:
 
 
 def _validate(shots: list[Shot]) -> None:
+    # No total-duration bound: per-model caps can make [60,180] unsatisfiable
+    # (e.g. six Veo shots max at 48s). Durations are clamped per model already.
     if len(shots) != 6:
         raise PlanValidationError(f"expected exactly 6 shots, got {len(shots)}")
     for s in shots:
         if not isinstance(s.render_class, RenderClass):
             raise PlanValidationError(f"{s.shot_id}: invalid render_class")
-    total = sum(s.duration_s for s in shots)
-    if not (60 <= total <= 180):
-        raise PlanValidationError(f"total duration {total}s not in [60, 180]")
 
 
 _PARSE_ERRORS = (
