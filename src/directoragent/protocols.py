@@ -45,6 +45,12 @@ class HiggsfieldClient(Protocol):
         Return job_id if one exists, else None."""
         ...
 
+    async def preflight_cost(self, shot: Shot) -> float:
+        """Projected cost of ONE generation of this shot, in the client's native
+        cost units (real adapter: Higgsfield credits via get_cost; mock: static
+        table units). MUST NOT submit a job."""
+        ...
+
 
 # --- Phase 4 -----------------------------------------------------------------
 class DriftScorer(Protocol):

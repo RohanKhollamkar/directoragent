@@ -25,7 +25,7 @@ _PLAN = {
             "prompt": "Wide establishing shot of a rain-slicked neon street at night; "
                       "puddles mirror magenta and cyan signs; a slow push-in down the "
                       "empty sidewalk; wet reflections, deep shadows.",
-            "duration_s": 18,
+            "duration_s": 8,
             "quality": "standard",
         },
         {
@@ -38,7 +38,7 @@ _PLAN = {
             "prompt": "Medium close-up of the figure in a long coat stepping into frame; "
                       "eyes scanning right; neon rim light along the jaw; steam rising "
                       "behind from a grate.",
-            "duration_s": 20,
+            "duration_s": 12,
             "quality": "standard",
         },
         {
@@ -50,7 +50,7 @@ _PLAN = {
             "motion_preset": "HANDHELD",
             "prompt": "Handheld tracking shot following the coat hem and quick boots over "
                       "wet asphalt; reflections smear; signage streaks past; cold blue light.",
-            "duration_s": 22,
+            "duration_s": 10,
             "quality": "standard",
         },
         {
@@ -63,7 +63,7 @@ _PLAN = {
             "prompt": "Close-up, slow push-in on the figure's face as it stops; jaw "
                       "tightening, gaze fixing forward; single overhead light, deep "
                       "shadow behind.",
-            "duration_s": 20,
+            "duration_s": 12,
             "quality": "high",
         },
         {
@@ -75,7 +75,7 @@ _PLAN = {
             "motion_preset": "ORBIT",
             "prompt": "Orbiting shot circling the figure at the intersection; umbrellas and "
                       "headlights sweep past; neon smears into arcs; rain catches the light.",
-            "duration_s": 22,
+            "duration_s": 10,
             "quality": "high",
         },
         {
@@ -87,7 +87,7 @@ _PLAN = {
             "motion_preset": "PULL_OUT",
             "prompt": "Wide pull-out as the figure walks away down the neon corridor; the "
                       "street empties; reflections settle; the signs hum in cyan and magenta.",
-            "duration_s": 18,
+            "duration_s": 8,
             "quality": "standard",
         },
     ]

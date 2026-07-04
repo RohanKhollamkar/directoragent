@@ -18,7 +18,6 @@ from directoragent.phases.mock_plan_provider import MockPlanProvider
 from directoragent.phases.vision import VisionExtractor
 from directoragent.clients.higgsfield_mock import MockHiggsfieldClient
 from directoragent.drift.mock_scorer import MockDriftScorer
-from directoragent.routing import estimate_cost
 from directoragent.schema import RunState, RunStatus, Storyboard
 from directoragent.state.sqlite_store import SqliteStateStore
 from directoragent.vision_providers import MockVisionProvider, make_provider
@@ -47,11 +46,10 @@ def _infer_arc(shots) -> str | None:
     return None
 
 
-def print_plan(state: RunState, projected: float) -> None:
+def print_plan(state: RunState, projected: float, per_shot_costs: list[float]) -> None:
     print(f"=== PLAN  run_id={state.run_id} ===")
     print(f"arc: {_infer_arc(state.shots) or '(custom)'}")
-    for shot in state.shots:
-        cost = estimate_cost(shot.model, shot.duration_s)
+    for shot, cost in zip(state.shots, per_shot_costs):
         print(
             f"\n{shot.shot_id}  beat={shot.narrative_beat}  "
             f"render_class={shot.render_class.value}  model={shot.model.value}  "
@@ -99,7 +97,8 @@ async def run(
             shots = await planner.plan(
                 scene, description, plan_provider, run_id, arc_name=arc_name
             )
-            projected = sum(estimate_cost(s.model, s.duration_s) for s in shots)
+            per_shot_costs = [await hf.preflight_cost(s) for s in shots]
+            projected = sum(per_shot_costs)
             if projected > settings.max_cost_usd:
                 raise CostCeilingError(projected, settings.max_cost_usd)
 
@@ -117,7 +116,7 @@ async def run(
                 await store.save_shot(run_id, shot)
 
             if plan_only:
-                print_plan(state, projected)
+                print_plan(state, projected, per_shot_costs)
                 return None  # stop before any spend; `da resume <run_id>` executes
 
         # Resume from PLANNING or EXECUTING both fall through to execution.
