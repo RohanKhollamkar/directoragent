@@ -23,7 +23,7 @@ class RenderClass(str, Enum):
 
 
 class Model(str, Enum):
-    SOUL_V2 = "soul_v2"
+    SEEDANCE_2 = "seedance_2"
     KLING_3 = "kling_3"
     WAN_2_6 = "wan_2_6"
     VEO_3_1 = "veo_3_1"

@@ -92,5 +92,5 @@ async def test_model_and_drift_come_from_routing_not_provider():
     shots = await plan(SCENE, "d", FakePlanProvider(payload), run_id="r")
     for s in shots:
         assert s.render_class == RenderClass.FACE
-        assert s.model is Model.SOUL_V2                       # route(FACE), not provider's veo
+        assert s.model is Model.SEEDANCE_2                    # route(FACE), not provider's veo
         assert s.min_drift_score == 0.78                     # drift_threshold(FACE), not 0.01

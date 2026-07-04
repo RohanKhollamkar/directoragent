@@ -14,8 +14,8 @@ from directoragent.schema import Model, RenderClass
 # so the storyboard metadata explains every routing choice.
 ROUTING: dict[RenderClass, tuple[Model, str]] = {
     RenderClass.FACE: (
-        Model.SOUL_V2,
-        "Face-centric shot: Soul v2/Cinema for identity-faithful character rendering.",
+        Model.SEEDANCE_2,
+        "Seedance 2.0 for identity-consistent face/character rendering",
     ),
     RenderClass.COMPLEX_MOTION: (
         Model.KLING_3,
@@ -55,7 +55,7 @@ def drift_threshold(render_class: RenderClass) -> float:
 # PLACEHOLDER numbers — calibrate against real Higgsfield pricing before
 # trusting --max-cost. USD per second of generated video, per model.
 COST_PER_SECOND: dict[Model, float] = {
-    Model.SOUL_V2: 0.10,
+    Model.SEEDANCE_2: 0.10,
     Model.KLING_3: 0.14,
     Model.WAN_2_6: 0.08,
     Model.VEO_3_1: 0.18,

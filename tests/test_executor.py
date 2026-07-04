@@ -37,7 +37,7 @@ def _shot():
         shot_style="s",
         render_class=RenderClass.FACE,
         narrative_beat="b",
-        model=Model.SOUL_V2,
+        model=Model.SEEDANCE_2,
         model_reason="r",
         camera_motion="c",
         motion_preset="STATIC",
