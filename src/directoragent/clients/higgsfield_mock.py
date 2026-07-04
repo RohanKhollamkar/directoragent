@@ -12,6 +12,7 @@ an internal dict so reconcile can find it — it MUST work.
 
 import asyncio
 
+from directoragent.routing import estimate_cost
 from directoragent.schema import Shot
 
 # Polls before a job flips to succeeded (per job_id).
@@ -48,3 +49,7 @@ class MockHiggsfieldClient:
     async def reconcile(self, idem_key: str) -> str | None:
         await asyncio.sleep(_LATENCY_S)
         return self._jobs.get(idem_key)
+
+    async def preflight_cost(self, shot: Shot) -> float:
+        # Mock cost units: the static COST_PER_SECOND table. No job submitted.
+        return estimate_cost(shot.model, shot.duration_s)

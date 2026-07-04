@@ -99,7 +99,7 @@ async def run(
             shots = await planner.plan(
                 scene, description, plan_provider, run_id, arc_name=arc_name
             )
-            projected = sum(estimate_cost(s.model, s.duration_s) for s in shots)
+            projected = sum([await hf.preflight_cost(s) for s in shots])
             if projected > settings.max_cost_usd:
                 raise CostCeilingError(projected, settings.max_cost_usd)
 

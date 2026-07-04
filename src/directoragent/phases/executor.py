@@ -28,7 +28,6 @@ from directoragent.protocols import DriftScorer, HiggsfieldClient, StateStore
 from directoragent.routing import (
     MAX_ATTEMPTS_PER_SHOT,
     MAX_CONCURRENT_JOBS,
-    estimate_cost,
 )
 from directoragent.schema import (
     IN_FLIGHT,
@@ -95,8 +94,10 @@ async def run_shot(
         # --- Quality-retry loop --------------------------------------------
         n = len(state.attempts.get(shot.shot_id, []))
         while n < MAX_ATTEMPTS_PER_SHOT:
-            projected = estimate_cost(shot.model, shot.duration_s)
-            if state.total_cost + projected > max_cost_usd:
+            # ONE preflight per iteration; reused for the guard, add_cost, and
+            # attempt.cost. preflight_cost MUST NOT submit a job.
+            cost = await hf.preflight_cost(shot)
+            if state.total_cost + cost > max_cost_usd:
                 break  # budget guard: leave the shot unfinished
 
             n += 1
@@ -116,13 +117,13 @@ async def run_shot(
             attempt.job_id = jid
             attempt.status = AttemptStatus.RUNNING
 
-            new_total = await store.add_cost(state.run_id, projected)  # ONCE per submission
+            new_total = await store.add_cost(state.run_id, cost)  # ONCE per submission
             state.total_cost = new_total
-            attempt.cost = projected
+            attempt.cost = cost
             # Persist the per-attempt cost too, so a reloaded RunState (and the
             # assembled storyboard) attributes cost per shot faithfully. This is
             # NOT a second add_cost — the run total was already incremented once.
-            await store.update_attempt(attempt.attempt_id, cost=projected)
+            await store.update_attempt(attempt.attempt_id, cost=cost)
 
             await _poll_to_terminal(attempt, store, hf, scorer, state, shot)
             if attempt.status == AttemptStatus.PASSED:

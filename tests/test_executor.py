@@ -122,6 +122,9 @@ class SpyHF:
     async def reconcile(self, idem_key):
         return await self._inner.reconcile(idem_key)
 
+    async def preflight_cost(self, shot):
+        return await self._inner.preflight_cost(shot)
+
 
 async def test_drift_fail_creates_second_attempt_and_passes(tmp_path):
     store = SqliteStateStore(str(tmp_path / "s.db"))
