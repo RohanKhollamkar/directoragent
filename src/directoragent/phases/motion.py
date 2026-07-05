@@ -5,8 +5,10 @@ one of these. camera_motion stays free prose; motion_preset is the closed
 token a downstream renderer can map to a real control.
 """
 
-# TODO(P12): reconcile these provisional presets against the real Higgsfield
-# motion vocabulary; rename to match if needed.
+# Motion handling is resolved (P12): the real API has no camera-motion enum, so
+# the Higgsfield adapter folds motion_preset into the generation prompt text
+# (see clients/higgsfield.py _MOTION_PHRASE). These stay as internal metadata /
+# prompt hints, reserved for a future mapping to Higgsfield preset_ids.
 MOTION_PRESETS = frozenset(
     {
         "PUSH_IN",
