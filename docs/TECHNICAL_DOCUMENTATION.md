@@ -73,7 +73,7 @@ those hashes in the same commit, which makes any modification visible in review.
 | `phases/vision.py` | VisionClient (wraps a VisionProvider; prompt + parse + validate + repair) | Built (P5) |
 | `state/sqlite_store.py` | StateStore (aiosqlite, Level-1 ledger) | Built (P2) |
 | `clients/higgsfield_mock.py` | HiggsfieldClient (no network; supports reconcile) | Built (P3a) |
-| `clients/higgsfield.py` | HiggsfieldClient (real MCP adapter, tenacity transient-retry) | Planned (P12) |
+| `clients/higgsfield.py` | HiggsfieldClient (real MCP: catalog mapping, media handshake, motion-into-prompt, fingerprint reconcile, get_cost preflight) | Built (P12.3) |
 | `drift/mock_scorer.py` | DriftScorer (synthetic, deterministic fail-then-pass) | Built (P4a) |
 | `drift/clip_scorer.py` | DriftScorer (lazy open_clip + torch) | Planned (P13) |
 
@@ -88,7 +88,8 @@ those hashes in the same commit, which makes any modification visible in review.
 | `phases/executor.py` | Fan-out, submit/poll, drift scoring, quality-retry, resume | Built (P7) |
 | `phases/assembler.py` | RunState ─► Storyboard; metrics; shot grid; storyboard.json | Built (P8) |
 | `pipeline.py` | Wires the five phases; owns the cost ceiling; selects mock vs real impls; resume-based plan-review | Built (P9) |
-| `cli.py` | Typer app: run / resume / status / list; --arc, --review; prints run_id | Planned (P10) |
+| `phases/model_limits.py` | Real per-model duration constraints + clamp_duration(); non-frozen, tracks the catalog | Built (P12.1b) |
+| `cli.py` | Typer app: run / resume / status / list; --arc, --review; prints run_id | Built (P10) |
 | `config.py` | pydantic-settings Settings; constructed once at the CLI boundary | Built (P1) |
 
 ### Layer D — Verification
@@ -97,9 +98,9 @@ those hashes in the same commit, which makes any modification visible in review.
 |---|---|---|
 | `.github/workflows/ci.yml` | Deterministic gates on every push: ruff, pytest, mock pipeline, idempotent resume | Built |
 | `tests/test_invariants.py` | Static invariants as executable checks (no module-level torch, routing-call locality, no utcnow, no settings singleton, foundation-hash guard) | Built |
-| `tests/test_routing.py` | Routing/threshold/cost correctness | Planned (P11) |
-| `tests/test_executor.py` | Behavioral invariants: second attempt on drift-fail, no resubmit on PASSED, open_attempt-before-network, add_cost-once | Planned (P11) |
-| `tests/test_pipeline_mock.py` | Full mock pipeline yields a valid Storyboard | Planned (P11) |
+| `tests/test_routing.py` | Routing/threshold/cost correctness | Built (P11) |
+| `tests/test_executor.py` | Behavioral invariants: second attempt on drift-fail, no resubmit on PASSED, open_attempt-before-network, add_cost-once | Built (P11) |
+| `tests/test_pipeline_mock.py` | Full mock pipeline yields a valid Storyboard; plan-review/resume path | Built (P11) |
 
 ---
 
@@ -173,9 +174,18 @@ record_job_id()     → status RUNNING      (written AFTER)
 ```
 
 The gap between `open_attempt` and `record_job_id` is the crash window. On
-resume, a shot left in SUBMITTING is recovered via `reconcile(idem_key)`, which
-asks Higgsfield whether a job for that idempotency key already exists — avoiding
-a double-submit (and double-charge) at the worst possible moment.
+resume, a shot left in SUBMITTING is recovered via `reconcile(idem_key)`.
+
+**Reconcile reality (P12 discovery — LOCKED):** the live Higgsfield API accepts
+**no idempotency key** on submission; it only knows job_ids it issued. So the
+real adapter implements `reconcile` as a **content-fingerprint search**: query
+recent generations (`show_generations`) and match on {model, prompt, params} —
+shot prompts are unique per attempt, so a recent match is the orphaned job.
+Recover its job_id, persist, re-poll. If the match is absent or ambiguous, fall
+back to a fresh submit (an accepted, rare double-charge). The Protocol signature
+is unchanged; the mock still supports direct key-based reconcile. Net effect:
+the crash-recovery *intent* (don't re-pay) is preserved via the mechanism the
+API actually provides.
 
 ### Two distinct retry mechanisms (never conflated)
 
@@ -425,14 +435,116 @@ frozen (core, stable, tied to the model roster); `motion_preset` is not
 (provisional, tied to an unknown external vocabulary). The distinction is
 deliberate.
 
-**P12 reconciliation:** the real Higgsfield presets are inspected at P12 and the
-provisional names are mapped onto them (renamed to match if needed). Blast radius
-is contained — it touches `phases/motion.py`, the real adapter's mapping, and the
-planner allowed-list; **nothing** in the executor, store, or assembler, which
-pass `motion_preset` through opaquely. The obligation is encoded in **three
-places** so it survives to P12: this document (§11), the P12 build prompt, and a
-`TODO(P12)` marker on the vocabulary definition and in the real adapter stub. A
-provisional decision survives not by memory but by markers at the worksite.
+**P12 reconciliation — RESOLVED (discovery complete):** inspection of the live
+MCP found **no camera-motion enum anywhere** on `generate_video` — motion is
+expressed via prompt text, Higgsfield presets (`preset_id`), or the separate
+`motion_control` tool (reference-video motion transfer). Outcome, as decided:
+`motion_preset` stays as an **internal abstraction** — human-readable storyboard
+metadata plus a prompt hint. The real adapter **folds it into the generation
+prompt text** (e.g. PUSH_IN → "slow push-in"); it is never a `generate_video`
+parameter. The field is retained (not simplified away) as reserved for a future
+mapping to Higgsfield `preset_id`s. The `TODO(P12)` marker is removed when the
+real adapter lands. Executor/store/assembler were never touched — they always
+passed it through opaquely, exactly as designed.
+
+### P12 discovery — what the live API changed (all LOCKED)
+
+Inspection of the connected Higgsfield MCP (~68 tools) surfaced four mismatches
+between design assumptions and reality, each resolved by decision:
+
+1. **`soul_v2` does not exist in the catalog.** The identity/face model is
+   `seedance_2_0`. Resolved: `Model.SOUL_V2` renamed to `Model.SEEDANCE_2`
+   (schema + routing + hash regen — P12.1, done). Internal enum names stay in
+   DirectorAgent style; the **real adapter owns the mapping to catalog IDs**
+   (seedance_2 → `seedance_2_0`, kling_3 → `kling3_0`, wan_2_6 → `wan2_6`,
+   veo_3_1 → `veo3_1`) so a catalog rename never reopens the frozen enum.
+2. **No idempotency key** → fingerprint-based reconcile (see §6).
+3. **Real duration limits are hard and per-model** (Veo {4,6,8}s; Wan {5,10,15};
+   Kling 3–15; Seedance 4–15) — far tighter than the planner's old 8–30s/60–180s
+   assumption (six Veo shots max at 48s, making the old total bound
+   unsatisfiable). Resolved (P12.1b, done): non-frozen `phases/model_limits.py`
+   carries `MODEL_DURATIONS` + `clamp_duration()`; the planner clamps each
+   shot's duration **after** `route()` assigns the model (the clamp needs the
+   model); the total-duration hard bound is **removed** — validation is now
+   "exactly 6 shots + valid render_classes"; the planner prompt teaches
+   realistic per-model ranges so clamping is the exception.
+4. **Billing is in credits, and `generate_video` supports `get_cost: true`** —
+   a no-spend cost preflight. Resolved: a `preflight_cost(shot)` method is added
+   to the HiggsfieldClient Protocol (P12.2 — foundation reopening, hash regen).
+   It is the single cost source for the pipeline projection and the executor's
+   budget-guard/add_cost. Real adapter: credits via `get_cost`; mock: the static
+   COST_PER_SECOND table (values unchanged, tests unaffected). Real-mode cost is
+   denominated in **credits**; `max_cost_usd` is a generic budget ceiling (a
+   known naming misnomer, deliberately not renamed). One remaining unknown —
+   the **status-string vocabulary** — is unconfirmable without spending; the
+   adapter ships defensive normalization (unknown strings logged, not crashed)
+   and the first cheap real shot (P12.4) confirms the vocabulary. **Live
+   calibration data point:** Veo 3.1 @ 8s costs 22 credits (confirmed via
+   `get_cost` in P12.3 smoke). Wan 2.6 @ 5s is expected to be the cheapest
+   combination — used for P12.4.
+
+**Transport seam:** the repo's Python cannot call a claude.ai MCP connector
+directly. The real adapter reaches Higgsfield via an injectable `call_tool` seam
+(production: a real MCP client session built with `api_key`; test/dev: the
+connector called directly and the response shape captured). The smoke in P12.3
+validated param-building and response-extraction against the real `get_cost`
+response. Status-string parsing carries `TODO(P12.4)` markers, resolved on the
+first paid run.
+
+**`preflight_cost` without media is correct behavior:** cost is
+model/duration/quality-driven; the reference media_id does not affect the credit
+figure. Requiring a media upload at plan-review time would couple the cost gate
+to a network handshake unnecessarily. `submit` sends the resolved media; preflight
+does not.
+
+### P12.4 live-run discovery (first real shot — Wan 2.6 @ 5s, 13 credits)
+
+The first real generation confirmed three things the mock could not, resolving
+all `TODO(P12.4)` markers:
+
+**Response envelope.** `generate_video` and `job_display` wrap every job in
+`{"results":[{…}]}`. The adapter unwraps via `_job_entry()` in submit / poll /
+fetch_result / reconcile. The asset URL lives at `results[0].results.rawUrl` (a
+dict, not a list-of-`{url}`). The media list key is `"uploads"` (not
+medias/files/items). This envelope bug was invisible in mock mode (the mock
+returned the assumed shape) and would have made every real poll read
+`status=None` → stuck "running"; it is exactly the class of defect the live run
+existed to surface.
+
+**Status vocabulary (observed, verbatim).** `pending` (at submit) → `in_progress`
+(in flight) → `completed` (success). So `_SUCCEEDED={"completed"}`,
+`_RUNNING={"pending","in_progress"}`. Failure strings were NOT observed
+(success-only run), so `_FAILED` stays conservative and the defensive
+`unknown → running` branch remains as the safety net for an as-yet-unseen
+failure/terminal string. Do not tighten `_FAILED` against guesses.
+
+**Media-path constraint (environment-specific, affects the transport decision).**
+The presigned-upload path (`media_upload → PUT bytes → media_confirm`,
+`_upload_local`) was **blocked in the Claude sandbox**: the egress proxy
+policy-denied the direct PUT to `upload.higgsfield.ai` (CONNECT 403,
+non-retryable). The run completed via the other real branch —
+`media_import_url` on a public URL → media_id — which works in-sandbox.
+Consequence: `_upload_local` is coded and shape-verified but **not
+end-to-end-tested**; it is expected to work in a normal deployed container (no
+such egress restriction) and must be verified there. The presigned URL signs
+`content-type`, so `_put_bytes` sends the matching `Content-Type` header.
+Confirmed shapes: `media_upload` → `{"uploads":[{"upload_url","media_id","url",
+"content_type","expires_in_seconds","method":"PUT",...}]}`; `media_import_url` →
+`{"media_id","type","content_type","source_url"}`. Per-model start-image role:
+`start_image` for Seedance/Kling/Veo, `image_references` for Wan. Live result
+example (P12.4): job `58c50606…`, asset at `results[0].results.rawUrl`
+(CloudFront .mp4), spend 13 credits (100 → 87), matching preflight exactly.
+
+**Reliability note.** Higgsfield's live server returned transient "Something went
+wrong" errors frequently (media_upload failed 3× before succeeding, and the first
+get_cost retried once). The tenacity 5xx/timeout seam is load-bearing, not
+decorative.
+
+**P12 build sequence:** P12.1 rename (✅) → P12.1b duration realism (✅) →
+P12.2 preflight_cost seam (✅) → P12.3 real adapter (✅) → P12.4 one deliberate
+cheap real shot (Wan 2.6 @ 5s, **manually triggered by the operator** — the
+first paid call is a conscious act, and it doubles as the status-vocabulary
+discovery run, resolving the TODO(P12.4) markers in poll()).
 
 ### Mock-mode planning
 
@@ -494,21 +606,18 @@ a false positive.
 
 | Step | Artifact | Status |
 |---|---|---|
-| P0 | Package restructure, pyproject, gitignore | ✅ Done |
-| — | Verification harness (CI, invariant gates, dep-split, hashes) | ✅ Done |
-| P1 | config.py | ✅ Done |
-| P2 | state/sqlite_store.py | ✅ Done |
-| P3a | clients/higgsfield_mock.py | ✅ Done |
-| P4a | drift/mock_scorer.py | ✅ Done |
+| P0–P4 | Restructure, harness, config, store, mocks | ✅ Done |
 | — | shot_style / render_class split | ✅ Done |
-| P5 | phases/vision.py | ✅ Done |
-| P6 | phases/planner.py + arcs.py + motion.py + mock_plan_provider.py | ✅ Done |
-| P7 | phases/executor.py | ✅ Done |
-| P8 | phases/assembler.py | ✅ Done |
-| P9 | pipeline.py (+ per-attempt cost persistence in executor) | ✅ Done |
-| P10 | cli.py (--arc, --review; flips CI mock-pipeline skip→run) | ▶ Next |
-| P11 | test suite | Planned |
-| P12 | clients/higgsfield.py (real MCP + motion reconciliation) | Planned |
+| P5–P8 | vision, planner (+arcs/motion/mock_plan), executor, assembler | ✅ Done |
+| P9 | pipeline.py (+ per-attempt cost persistence) | ✅ Done |
+| P10 | cli.py (--arc, --review); CI mock-pipeline gate flipped to run | ✅ Done |
+| P11 | test suite (19 → 21 tests; asyncio_mode fix) | ✅ Done |
+| P12.1 | Model rename SOUL_V2 → SEEDANCE_2 (foundation + hashes) | ✅ Done |
+| P12.1b | model_limits.py + planner duration clamp; total-duration bound removed | ✅ Done |
+| P12.2 | preflight_cost on the Protocol + mock + pipeline/executor wiring | ✅ Done |
+| P12.3 | clients/higgsfield.py — real MCP adapter (call_tool seam, catalog mapping, media handshake, motion-into-prompt, defensive status norm, fingerprint reconcile, get_cost preflight) | ✅ Done |
+| P12.4 | First cheap real shot — Wan 2.6 @ 5s, 13 credits; confirmed status vocabulary + response envelope + media-path constraint | ✅ Done |
+| P12.5 | REST transport behind the seam (platform.higgsfield.ai, KEY_ID:KEY_SECRET) — deployable/shareable path | ▶ Next |
 | P13 | drift/clip_scorer.py (real CLIP) | Planned |
 | P14 | README, finalize, full integrity sweep | Planned |
 
@@ -530,7 +639,7 @@ generation from P12.
 | Scene model **and** photo to the planner | Groundedness is the product premise; the small token cost is justified by visually faithful shots. |
 | shot_style / render_class split | Unbounded creative vocabulary while routing stays deterministic and the LLM never picks the model. |
 | Named swappable arc templates | Supports non-action scenes; makes default/named/user-defined arcs one code path; surfaces the arc to the user. |
-| camera_motion free-text + motion_preset provisional closed enum | Same move, two representations: expressive prose for the prompt, a mappable value for the API. Mirrors shot_style/render_class. The provisional set lives in mutable planner code, not the frozen schema, because it reconciles against Higgsfield's real presets at P12. |
+| camera_motion free-text + motion_preset provisional closed enum | Same move, two representations: expressive prose for the prompt, a mappable value for the API. Mirrors shot_style/render_class. The provisional set lives in mutable planner code, not the frozen schema, because it reconciles against the real API at P12 — reconciled: no motion enum exists; the field is metadata + a prompt hint the adapter folds into prompt text. |
 | Plan-review checkpoint before spend | User sees the exact Higgsfield prompts and approves before any paid generation; aligns with the cost-ceiling philosophy. |
 | Two separate retry mechanisms | Prevents double-counted cost and swallowed quality failures; keeps metrics meaningful. |
 
@@ -545,7 +654,8 @@ generation from P12.
 | User-defined custom arcs | The template mechanism is built v1 (default + named); accepting arbitrary user beat-lists is additive and not needed to prove the concept. Stubbed behind the same arc interface. |
 | Shot-to-shot chaining (PREVIOUS_SHOT references at generation time) | True chaining serialises parts of the fan-out and introduces an ordering dependency. v1 resolves all generation references to the source photo and records reference.type as metadata only, keeping the fan-out fully parallel. |
 | Automated shot_style↔render_class consistency check | Trusting the validated render_class is simpler and avoids false corrections from a brittle classifier. Prevention (prompt rubric), detection (plan review), and containment (retry + cost ceiling) cover the gap. Build only if real runs show a high mismatch rate — failure data should drive the design. |
-| motion_preset ↔ Higgsfield preset reconciliation (P12) | The real preset vocabulary is unknown until the MCP is inspected. A generous provisional enum of common camera moves gives determinism through the mock phase with a high-probability-clean mapping later. Low blast radius (motion module + adapter mapping + planner list; no executor/store/assembler change). Encoded in this doc, the P12 prompt, and TODO(P12) code markers so it survives to P12. |
+| motion_preset ↔ Higgsfield reconciliation | RESOLVED at P12 discovery: no motion enum exists on the API; motion_preset is internal metadata + a prompt hint (see §7). Retained for a future preset_id mapping. |
+| Status-string vocabulary confirmation | Unconfirmable without spending credits; the adapter ships defensive normalization and the first cheap real shot (P12.4) confirms the real strings. |
 | render_class expansion beyond four | Cardinality tracks the model roster; four models exist today. Adding a class is a localized, on-demand routine (see §12), not a v1 concern. |
 | Postgres backend | The StateStore protocol makes it a config-time swap; SQLite covers development and the demo. |
 | Cost-model calibration | COST_PER_SECOND values are placeholders until validated against real Higgsfield pricing; required before trusting `--max-cost` in real mode. |
