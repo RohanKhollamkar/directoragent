@@ -100,6 +100,38 @@ fall back to a fresh submit (an accepted, rare double-charge). The mock still
 supports key-based reconcile directly. The Protocol signature is unchanged —
 only the real adapter's implementation differs.
 
+**Real API shapes (confirmed P12.4 — build against these):**
+- Response envelope: generate_video / job_display return `{"results":[{…}]}`.
+  Unwrap via `_job_entry()` in submit/poll/fetch_result/reconcile. Asset URL at
+  `results[0].results.rawUrl` (dict). Media list key is `"uploads"`.
+- Status vocabulary: `pending`/`in_progress` → running; `completed` → succeeded.
+  Failure strings unobserved — keep `_FAILED` conservative and the
+  `unknown → running` defensive branch. Do NOT guess failure strings.
+- Media: `media_import_url` (public URL → media_id) works everywhere.
+  `_upload_local` (media_upload → PUT presigned → media_confirm) is blocked by the
+  Claude sandbox egress proxy (CONNECT 403) — shape-verified but NOT
+  end-to-end-tested; verify in a deployed container. Presigned URL signs
+  content-type → `_put_bytes` sends matching Content-Type.
+  - `media_upload` response: `{"uploads":[{"upload_url","media_id","url",
+    "content_type","expires_in_seconds","method":"PUT",...}]}`.
+  - `media_import_url` response: `{"media_id","type","content_type","source_url"}`.
+- Start-image role per model (in `medias[].role`): `start_image` for
+  Seedance/Kling/Veo; **`image_references` for Wan** (Wan has no start_image role).
+- Reliability: frequent transient "Something went wrong" errors; the tenacity
+  5xx/timeout seam is load-bearing.
+
+**Two transports behind the call_tool seam (the adapter is transport-agnostic):**
+- Agent-mediated (in-session demo, proven at P12.4): call_tool = the Claude agent
+  invoking mcp__Higgsfield__* via the OAuth connector. Only works in a Claude
+  session. This is what `main` demos with.
+- REST (P12.5, deployable): call_tool = authenticated httpx to
+  `platform.higgsfield.ai`, header `Authorization: Key KEY_ID:KEY_SECRET`. Runs
+  anywhere. Config grows `higgsfield_key_id` + `higgsfield_key_secret`. REST may
+  use a different response envelope than the MCP `{"results":[…]}` — verify via a
+  non-spending smoke and normalize IN the transport so the adapter stays
+  shape-stable. REST transport is ADDITIVE — it does not remove the agent path;
+  both coexist, selected by config.
+
 ### 3. route() and drift_threshold() called ONLY in the planner
 The LLM proposes a `render_class` (the closed routing key). routing.py maps
 `render_class → model` deterministically. The planner validates the proposed
