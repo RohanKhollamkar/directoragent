@@ -3,11 +3,16 @@
 Implements the HiggsfieldClient Protocol against the live Higgsfield MCP tools
 (generate_video, media_upload/import/confirm, job_display, show_generations).
 
-Key facts, confirmed against the live catalog via models_explore:
+Key facts, confirmed against the live catalog via models_explore and the first
+live generation (P12.4, job 58c50606, wan2_6 @ 5s, 13 credits):
   - internal Model -> catalog id: seedance_2_0 / kling3_0 / wan2_6 / veo3_1.
   - start-image media role per model: start_image for Seedance/Kling/Veo,
     image_references for Wan (it has no start_image role).
-  - get_cost is a no-spend preflight; veo3_1 @ 8s returns {"cost":{"credits":22}}.
+  - get_cost is a no-spend preflight, shape {"cost":{"credits":N,"credits_exact":N}};
+    veo3_1 @ 8s = 22 credits, wan2_6 @ 5s = 13 credits.
+  - generate_video and job_display wrap the job in {"results":[{...}]}; the
+    completed job carries its asset at results[0].results.rawUrl.
+  - status vocabulary (observed live): pending -> in_progress -> completed.
   - the API has NO idempotency key on submit (see reconcile()).
   - there is NO camera-motion parameter: motion_preset is folded into the prompt
     text here, never sent as a generate_video parameter.
@@ -71,16 +76,14 @@ _MOTION_PHRASE: dict[str, str] = {
     "CRANE": "crane camera move",
 }
 
-# poll() status normalization.
-# TODO(P12.4): confirm the real status vocabulary from the first live run and
-# tighten these sets (job_display's exact status strings were not observable
-# non-spending — history was empty at discovery time).
-_SUCCEEDED = {"completed", "succeeded", "success", "done", "finished", "ready"}
-_FAILED = {"failed", "error", "errored", "canceled", "cancelled", "rejected"}
-_RUNNING = {
-    "queued", "pending", "processing", "running", "in_progress",
-    "in-progress", "started", "submitted",
-}
+# poll() status normalization. Vocabulary confirmed on the first live run
+# (P12.4): submit returns "pending", polling shows "in_progress", terminal is
+# "completed". The failure path was not exercised live (success on the only
+# job), so _FAILED keeps conservative candidates — anything unrecognized falls
+# through to the defensive unknown -> running branch in poll().
+_SUCCEEDED = {"completed"}
+_FAILED = {"failed", "error", "canceled", "cancelled", "rejected"}
+_RUNNING = {"pending", "in_progress", "queued", "processing"}
 
 ToolCaller = Callable[..., Awaitable[Any]]
 
@@ -103,6 +106,18 @@ def _first(obj: Any, keys: tuple[str, ...]) -> Any:
             if obj.get(k) is not None:
                 return obj[k]
     return None
+
+
+def _job_entry(resp: Any) -> dict:
+    """Unwrap a job response. generate_video and job_display both wrap the job
+    in {"results": [{...}]} (confirmed live at P12.4); tolerate an unwrapped
+    single-job dict as a fallback."""
+    results = _first(resp, ("results",))
+    if isinstance(results, list) and results and isinstance(results[0], dict):
+        return results[0]
+    if isinstance(resp, dict):
+        return resp
+    raise HiggsfieldError(f"unrecognized job response shape: {resp!r}")
 
 
 _RETRY = retry(
@@ -131,9 +146,14 @@ class HiggsfieldClient:
         return await self._call_tool(tool, **params)
 
     @_RETRY
-    async def _put_bytes(self, url: str, data: bytes) -> None:
+    async def _put_bytes(self, url: str, data: bytes, content_type: str) -> None:
+        # The presigned URL signs the content-type header (X-Amz-SignedHeaders
+        # includes content-type), so the PUT must send the exact Content-Type
+        # media_upload was told about or S3 rejects it with 403.
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.put(url, content=data)
+            resp = await client.put(
+                url, content=data, headers={"Content-Type": content_type}
+            )
             resp.raise_for_status()
 
     # --- Prompt / params ----------------------------------------------------
@@ -163,6 +183,8 @@ class HiggsfieldClient:
             return self._media_cache[source]
         if source.startswith(("http://", "https://")):
             resp = await self._mcp("media_import_url", url=source, type="image")
+            # Shape confirmed live at P12.4: {"media_id": <uuid>, "type",
+            # "content_type", "source_url"} — the id is already confirmed.
             media_id = _first(resp, ("media_id", "id", "uuid"))
             if not media_id:
                 raise HiggsfieldError(f"media_import_url returned no media_id: {resp!r}")
@@ -174,18 +196,19 @@ class HiggsfieldClient:
     async def _upload_local(self, path: str) -> str:
         p = Path(path)
         resp = await self._mcp("media_upload", filename=p.name)
-        # TODO(P12.4): confirm media_upload's response shape on the first live
-        # submit; parsed defensively here (presigned upload_url + media_id).
+        # Shape confirmed live at P12.4: {"uploads": [{"upload_url": <presigned
+        # PUT url>, "media_id": <uuid>, "url": <cdn url>, "content_type": ...}]}.
         entry = resp
-        for key in ("medias", "files", "items"):
+        for key in ("uploads", "medias", "files", "items"):
             if isinstance(resp, dict) and isinstance(resp.get(key), list) and resp[key]:
                 entry = resp[key][0]
                 break
         media_id = _first(entry, ("media_id", "id", "uuid"))
-        upload_url = _first(entry, ("upload_url", "url", "put_url"))
+        upload_url = _first(entry, ("upload_url", "put_url"))
         if not media_id or not upload_url:
             raise HiggsfieldError(f"media_upload response missing id/url: {resp!r}")
-        await self._put_bytes(upload_url, p.read_bytes())
+        content_type = _first(entry, ("content_type",)) or "image/png"
+        await self._put_bytes(upload_url, p.read_bytes(), content_type)
         await self._mcp("media_confirm", media_id=media_id, type="image")
         return media_id
 
@@ -214,20 +237,16 @@ class HiggsfieldClient:
             "prompt": params["prompt"],
         }
         resp = await self._mcp("generate_video", params=params)
-        job_id = _first(resp, ("id", "job_id"))
-        if job_id is None:
-            gen = _first(resp, ("generation", "job", "data"))
-            job_id = _first(gen, ("id", "job_id")) if gen else None
+        # Confirmed live at P12.4: {"results": [{"id": <job uuid>, "status":
+        # "pending", "model": ..., "params": {...}}]}.
+        job_id = _first(_job_entry(resp), ("id", "job_id"))
         if job_id is None:
             raise HiggsfieldError(f"no job_id in generate_video response: {resp!r}")
         return str(job_id)
 
     async def poll(self, job_id: str) -> str:
         resp = await self._mcp("job_display", id=job_id)
-        raw = _first(resp, ("status",))
-        if raw is None:
-            gen = _first(resp, ("generation", "job", "result", "data"))
-            raw = _first(gen, ("status",)) if gen else None
+        raw = _first(_job_entry(resp), ("status",))
         status = str(raw).strip().lower() if raw is not None else ""
         if status in _SUCCEEDED:
             return "succeeded"
@@ -236,7 +255,6 @@ class HiggsfieldClient:
         if status in _RUNNING:
             return "running"
         # Unknown, non-terminal state: keep polling rather than crash / false-fail.
-        # TODO(P12.4): confirm real status vocabulary from the first live run.
         log.warning(
             "higgsfield poll: unknown status %r for job %s; treating as running",
             raw, job_id,
@@ -245,14 +263,14 @@ class HiggsfieldClient:
 
     async def fetch_result(self, job_id: str) -> str:
         resp = await self._mcp("job_display", id=job_id)
-        results = _first(resp, ("results", "result"))
-        if isinstance(results, list) and results:
-            first = results[0]
-            url = _first(first, ("url", "asset_url", "video_url", "result_url"))
+        # Confirmed live at P12.4: the completed job entry carries its asset at
+        # entry["results"]["rawUrl"] (a dict, nested inside the outer
+        # {"results": [...]} envelope).
+        results = _first(_job_entry(resp), ("results", "result"))
+        if isinstance(results, dict):
+            url = _first(results, ("rawUrl", "raw_url", "url"))
             if isinstance(url, str) and url:
                 return url
-            if isinstance(first, str) and first:
-                return first
         if isinstance(results, str) and results:
             return results
         raise HiggsfieldError(f"no result asset for job {job_id}: {resp!r}")
@@ -267,8 +285,10 @@ class HiggsfieldClient:
         fp = self._fingerprints.get(idem_key)
         if fp is None:
             return None
+        # job_display/generate_video use a {"results": [...]} envelope (P12.4),
+        # so check it here too; "items" kept as a defensive fallback.
         resp = await self._mcp("show_generations", type="video", size=24)
-        items = _first(resp, ("items",))
+        items = _first(resp, ("results", "items"))
         if items is None:
             items = resp if isinstance(resp, list) else []
         for item in items:
