@@ -617,7 +617,8 @@ a false positive.
 | P12.2 | preflight_cost on the Protocol + mock + pipeline/executor wiring | ✅ Done |
 | P12.3 | clients/higgsfield.py — real MCP adapter (call_tool seam, catalog mapping, media handshake, motion-into-prompt, defensive status norm, fingerprint reconcile, get_cost preflight) | ✅ Done |
 | P12.4 | First cheap real shot — Wan 2.6 @ 5s, 13 credits; confirmed status vocabulary + response envelope + media-path constraint | ✅ Done |
-| P12.5 | REST transport behind the seam (platform.higgsfield.ai, KEY_ID:KEY_SECRET) — deployable/shareable path | ▶ Next |
+| P12.5 | REST transport (higgsfield_rest_transport.py, KEY_ID:KEY_SECRET, SDK-derived contract, envelope normalization) — built + stub-tested; live smoke deferred (egress-blocked) | ✅ Done |
+| P12.5-live | First out-of-sandbox REST run: confirm per-model submit endpoint (placeholder now) + resolve get_cost-over-REST gap | ⬜ At deploy/allowlist |
 | P13 | drift/clip_scorer.py (real CLIP) | Planned |
 | P14 | README, finalize, full integrity sweep | Planned |
 
