@@ -26,8 +26,15 @@ class Settings(BaseSettings):
     vision_provider: Literal["openai", "anthropic", "gemini", "mock"] = "anthropic"
     vision_model: str | None = None  # blank -> provider default (see make_provider)
 
-    # Higgsfield client
-    higgsfield_api_key: str | None = None
+    # Higgsfield client.
+    # Two transports behind the adapter's call_tool seam:
+    #  - agent-mediated (in-session Claude connector) — not constructible here.
+    #  - REST (deployable): needs key_id + key_secret; auth is
+    #    `Authorization: Key KEY_ID:KEY_SECRET` against higgsfield_base_url.
+    higgsfield_api_key: str | None = None  # legacy/agent-mediated; dead over REST
+    higgsfield_key_id: str = ""
+    higgsfield_key_secret: str = ""
+    higgsfield_base_url: str = "https://platform.higgsfield.ai"
 
     # Run mode / safety rails
     mock_mode: bool = False

@@ -36,6 +36,35 @@ class CostCeilingError(RuntimeError):
         )
 
 
+def _build_higgsfield_transport(settings: Settings):
+    """Select the real-mode call_tool transport for HiggsfieldClient.
+
+    REST (deployable) is used when key_id + key_secret are configured. The
+    agent-mediated transport (in-session Claude connector calling
+    mcp__Higgsfield__*) is NOT constructible from the CLI — it only exists
+    inside a Claude session — so real mode without REST credentials is an error
+    rather than a silent no-transport client that fails on first network call.
+    """
+    if settings.higgsfield_key_id and settings.higgsfield_key_secret:
+        from directoragent.clients.higgsfield_rest_transport import (
+            HiggsfieldRestTransport,
+        )
+
+        return HiggsfieldRestTransport(
+            key_id=settings.higgsfield_key_id,
+            key_secret=settings.higgsfield_key_secret,
+            base_url=settings.higgsfield_base_url,
+        )
+    raise RuntimeError(
+        "real mode needs a Higgsfield transport but none is configured.\n"
+        "  - REST (deployable): set HIGGSFIELD_KEY_ID and HIGGSFIELD_KEY_SECRET "
+        "(auth `Key KEY_ID:KEY_SECRET`).\n"
+        "  - agent-mediated: only works inside a Claude session (the connector "
+        "supplies call_tool); it cannot be built from the CLI.\n"
+        "Or pass --mock to run with no credentials and no cost."
+    )
+
+
 def _infer_arc(shots) -> str | None:
     """Best-effort recovery of the arc name from the shots' narrative beats
     (RunState doesn't store the arc; the beat names usually identify it)."""
@@ -85,7 +114,10 @@ async def run(
 
         shared = make_provider(settings.vision_provider, settings.vision_model)
         vision_provider = plan_provider = shared
-        hf = HiggsfieldClient(settings.higgsfield_api_key)
+        hf = HiggsfieldClient(
+            settings.higgsfield_api_key,
+            call_tool=_build_higgsfield_transport(settings),
+        )
         scorer = ClipDriftScorer()
 
     vision = VisionExtractor(vision_provider)
