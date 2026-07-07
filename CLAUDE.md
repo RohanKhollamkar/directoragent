@@ -124,13 +124,26 @@ only the real adapter's implementation differs.
 - Agent-mediated (in-session demo, proven at P12.4): call_tool = the Claude agent
   invoking mcp__Higgsfield__* via the OAuth connector. Only works in a Claude
   session. This is what `main` demos with.
-- REST (P12.5, deployable): call_tool = authenticated httpx to
-  `platform.higgsfield.ai`, header `Authorization: Key KEY_ID:KEY_SECRET`. Runs
-  anywhere. Config grows `higgsfield_key_id` + `higgsfield_key_secret`. REST may
-  use a different response envelope than the MCP `{"results":[…]}` — verify via a
-  non-spending smoke and normalize IN the transport so the adapter stays
-  shape-stable. REST transport is ADDITIVE — it does not remove the agent path;
-  both coexist, selected by config.
+- REST (P12.5, deployable — BUILT): call_tool = `HiggsfieldRestTransport`,
+  authenticated httpx to `platform.higgsfield.ai`, header
+  `Authorization: Key KEY_ID:KEY_SECRET`. Runs anywhere. Config:
+  `higgsfield_key_id` + `higgsfield_key_secret` + `higgsfield_base_url`.
+  Contract derived from the official `higgsfield-js` v2 SDK. Selected in
+  pipeline real-mode when both creds are set; ADDITIVE — agent path untouched.
+  - REST envelope is FLAT (`{status, request_id, images:[{url}], video:{url}}`),
+    NOT the MCP `{"results":[…]}` wrapper. Transport normalizes REST→MCP so the
+    adapter stays shape-stable. Status adds `nsfw`/`canceled` → failed.
+  - Poll: `GET /requests/{request_id}/status`. Upload: `POST
+    /files/generate-upload-url` → presigned PUT.
+  - **TWO TODO(P12.5-live) gaps — block a real REST submit until the first
+    allowlisted/deployed run:** (1) the per-model submit endpoint is CMS-driven,
+    absent from the SDK — transport uses a `/v2/generate` PLACEHOLDER; read real
+    endpoints from the live API. (2) `get_cost` has no REST equivalent, so
+    `preflight_cost` over REST raises — REST mode has NO pre-spend cost gate until
+    resolved. Deploy-time fix (recommended): degrade to the static
+    COST_PER_SECOND table for projection + reconcile actual cost post-submit.
+  - The sandbox egress proxy blocks platform.higgsfield.ai (CONNECT 403), so REST
+    is verified only by stubbed unit tests here; the live smoke is deploy-time.
 
 ### 3. route() and drift_threshold() called ONLY in the planner
 The LLM proposes a `render_class` (the closed routing key). routing.py maps
