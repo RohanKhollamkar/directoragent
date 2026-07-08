@@ -82,7 +82,7 @@ those hashes in the same commit, which makes any modification visible in review.
 | File | Role | Status |
 |---|---|---|
 | `phases/arcs.py` | Arc library (4 arcs × 6 beats with soft render_leans); non-frozen data | Built (P6) |
-| `phases/motion.py` | Provisional motion-preset vocabulary; non-frozen; TODO(P12) | Built (P6) |
+| `phases/motion.py` | Provisional motion-preset vocabulary; non-frozen; TODO(P12) resolved — prompt-hint fold-in, never an API param | Built (P6) |
 | `phases/mock_plan_provider.py` | Canned 6-shot plan for mock-mode planning | Built (P6) |
 | `phases/planner.py` | SceneModel + photo ─► 6 × Shot; arc selection + guard + deterministic routing | Built (P6) |
 | `phases/executor.py` | Fan-out, submit/poll, drift scoring, quality-retry, resume | Built (P7) |
