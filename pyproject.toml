@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-clip = ["torch", "open-clip-torch"]
+clip = ["torch", "open-clip-torch", "av", "pillow"]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 
 [project.scripts]
