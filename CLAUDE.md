@@ -90,15 +90,18 @@ await store.record_job_id(attempt.attempt_id, jid)  # status=RUNNING
 The gap between open_attempt and record_job_id is the crash window.
 reconcile() covers it on resume. Never reorder these three lines.
 
-**Reconcile reality (P12 discovery):** the Higgsfield API accepts NO idempotency
-key on submit — it only knows job_ids it issued. So in the REAL adapter,
-`reconcile(idem_key)` is implemented as a content-fingerprint search: query
-recent generations (show_generations) and match on {model, prompt, params}
-(shot prompts are unique per attempt, so a recent match is the orphaned job).
-Recover its job_id, persist, re-poll. If the match is ambiguous or absent,
-fall back to a fresh submit (an accepted, rare double-charge). The mock still
-supports key-based reconcile directly. The Protocol signature is unchanged —
-only the real adapter's implementation differs.
+**Reconcile reality (P12 discovery; contract reopened at SWEEP-FIX-2):** the
+Higgsfield API accepts NO idempotency key on submit — it only knows job_ids it
+issued. So in the REAL adapter, `reconcile(idem_key, shot)` is implemented as a
+content-fingerprint search: the fingerprint {catalog model id, full generation
+prompt incl. the folded motion phrase} is derived from the persisted Shot AT
+CALL TIME (crash-safe — no in-memory state), then matched against recent
+generations (show_generations). Prompts are IDENTICAL across a shot's
+quality-retry attempts, so anything but exactly one match is ambiguous: zero or
+MULTIPLE matches → None, and the caller submits fresh (an accepted, rare
+double-charge). Exactly one match → recover its job_id, persist, re-poll. The
+mock still supports key-based reconcile directly (same signature; `shot`
+unused).
 
 **Real API shapes (confirmed P12.4 — build against these):**
 - Response envelope: generate_video / job_display return `{"results":[{…}]}`.
@@ -139,8 +142,9 @@ only the real adapter's implementation differs.
     allowlisted/deployed run:** (1) the per-model submit endpoint is CMS-driven,
     absent from the SDK — transport uses a `/v2/generate` PLACEHOLDER; read real
     endpoints from the live API. (2) `get_cost` has no REST equivalent, so
-    `preflight_cost` over REST raises — REST mode has NO pre-spend cost gate until
-    resolved. Deploy-time fix (recommended): degrade to the static
+    `preflight_cost` over REST raises — REST real mode is fully inoperative until
+    TODO(P12.5-live) #2 is resolved (preflight raises at the first pipeline step).
+    Deploy-time fix (recommended): degrade to the static
     COST_PER_SECOND table for projection + reconcile actual cost post-submit.
   - The sandbox egress proxy blocks platform.higgsfield.ai (CONNECT 403), so REST
     is verified only by stubbed unit tests here; the live smoke is deploy-time.

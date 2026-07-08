@@ -133,7 +133,6 @@ class HiggsfieldClient:
         self._api_key = api_key
         self._call_tool = call_tool                  # MCP transport seam (async)
         self._media_cache: dict[str, str] = {}       # source path -> media_id
-        self._fingerprints: dict[str, dict] = {}     # idem_key -> {model, prompt}
 
     # --- MCP / network call boundary (the retried seam) ---------------------
     @_RETRY
@@ -231,11 +230,8 @@ class HiggsfieldClient:
         media_id = await self._resolve_media(shot.reference.source)
         params = self._generate_params(shot, media_id)
         # idem_key is intentionally NOT sent — the API has no idempotency key.
-        # Record the fingerprint so reconcile() can best-effort recover the job.
-        self._fingerprints[idem_key] = {
-            "model": params["model"],
-            "prompt": params["prompt"],
-        }
+        # reconcile() recovers a crashed submission by re-deriving the content
+        # fingerprint from the persisted Shot, so nothing is recorded here.
         resp = await self._mcp("generate_video", params=params)
         # Confirmed live at P12.4: {"results": [{"id": <job uuid>, "status":
         # "pending", "model": ..., "params": {...}}]}.
@@ -275,26 +271,35 @@ class HiggsfieldClient:
             return results
         raise HiggsfieldError(f"no result asset for job {job_id}: {resp!r}")
 
-    async def reconcile(self, idem_key: str) -> str | None:
+    async def reconcile(self, idem_key: str, shot: Shot) -> str | None:
         """Best-effort content fingerprint — NOT key-based (the API has no
-        idempotency key). Matches recent generations on {model, prompt} recorded
-        at submit time (prompts are unique per attempt). Returns a job_id, or
-        None if no confident match (the caller then submits fresh — an accepted,
-        rare double-cost). After a cross-process crash the fingerprint is gone,
-        so this returns None and the caller re-submits."""
-        fp = self._fingerprints.get(idem_key)
-        if fp is None:
-            return None
+        idempotency key; `idem_key` is unused here). The fingerprint {catalog
+        model id, full generation prompt incl. the folded motion phrase} is
+        derived from the persisted Shot at call time, so recovery survives a
+        cross-process crash. The prompt is IDENTICAL across a shot's
+        quality-retry attempts, so anything but exactly one match is ambiguous:
+        zero or MULTIPLE matches return None and the caller submits fresh (an
+        accepted, rare double-charge)."""
+        fp = self._generate_params(shot, media_id=None)
         # job_display/generate_video use a {"results": [...]} envelope (P12.4),
         # so check it here too; "items" kept as a defensive fallback.
         resp = await self._mcp("show_generations", type="video", size=24)
         items = _first(resp, ("results", "items"))
         if items is None:
             items = resp if isinstance(resp, list) else []
+        matches: list[str] = []
         for item in items:
             params = _first(item, ("params",)) or {}
             if params.get("model") == fp["model"] and params.get("prompt") == fp["prompt"]:
                 jid = _first(item, ("id", "job_id"))
                 if jid:
-                    return str(jid)
-        return None
+                    matches.append(str(jid))
+        if len(matches) != 1:
+            if matches:
+                log.warning(
+                    "higgsfield reconcile: %d fingerprint matches for shot %s "
+                    "— ambiguous, submitting fresh",
+                    len(matches), shot.shot_id,
+                )
+            return None
+        return matches[0]

@@ -96,8 +96,9 @@ async def run_shot(
                 if last.status == AttemptStatus.PASSED:
                     return
             elif last.status == AttemptStatus.SUBMITTING:
-                # Crash window: a job may already exist for this idem_key.
-                jid = await hf.reconcile(last.idem_key)
+                # Crash window: a job may already exist for this attempt. The
+                # shot is passed so the real adapter can fingerprint it.
+                jid = await hf.reconcile(last.idem_key, shot)
                 if jid:
                     await store.record_job_id(last.attempt_id, jid)
                     last.job_id = jid
