@@ -150,14 +150,24 @@ async def run(
             if plan_only:
                 print_plan(state, projected, per_shot_costs)
                 return None  # stop before any spend; `da resume <run_id>` executes
+        elif plan_only:
+            # Plan-review is "stop before spend" in ALL cases: on an existing
+            # run-id it re-prints the persisted plan (costs recomputed) and
+            # returns — no status write, no executor, no spend.
+            per_shot_costs = [await hf.preflight_cost(s) for s in state.shots]
+            print_plan(state, sum(per_shot_costs), per_shot_costs)
+            return None
 
         # Resume from PLANNING or EXECUTING both fall through to execution.
         # Persist the EXECUTING transition (covers resuming a PLANNING run;
-        # a no-op rewrite on fresh runs already created as EXECUTING).
+        # a no-op rewrite on fresh runs already created as EXECUTING). Skip it
+        # when the run is already COMPLETE so an idempotent re-resume never
+        # flips a finished run back to EXECUTING, even transiently.
         # ABORTED stays unwired: the cost-ceiling check raises BEFORE any
         # persistence on fresh runs, so there is no persisted run to mark —
         # it becomes reachable only if a post-persistence abort path is added.
-        await store.update_run_status(run_id, RunStatus.EXECUTING)
+        if state.status != RunStatus.COMPLETE:
+            await store.update_run_status(run_id, RunStatus.EXECUTING)
         await executor.run_all(state, store, hf, scorer, settings.max_cost_usd)
         storyboard = assembler.assemble(await store.load_run(run_id))
         await store.update_run_status(run_id, RunStatus.COMPLETE)
