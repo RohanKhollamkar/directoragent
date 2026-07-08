@@ -82,7 +82,7 @@ those hashes in the same commit, which makes any modification visible in review.
 | File | Role | Status |
 |---|---|---|
 | `phases/arcs.py` | Arc library (4 arcs × 6 beats with soft render_leans); non-frozen data | Built (P6) |
-| `phases/motion.py` | Provisional motion-preset vocabulary; non-frozen; TODO(P12) resolved — prompt-hint fold-in, never an API param | Built (P6) |
+| `phases/motion.py` | Provisional motion-preset vocabulary; non-frozen; TODO(P12) | Built (P6) |
 | `phases/mock_plan_provider.py` | Canned 6-shot plan for mock-mode planning | Built (P6) |
 | `phases/planner.py` | SceneModel + photo ─► 6 × Shot; arc selection + guard + deterministic routing | Built (P6) |
 | `phases/executor.py` | Fan-out, submit/poll, drift scoring, quality-retry, resume | Built (P7) |
@@ -621,7 +621,9 @@ a false positive.
 | P12.5-live | First out-of-sandbox REST run: confirm per-model submit endpoint (placeholder now) + resolve get_cost-over-REST gap | ⬜ At deploy/allowlist |
 | P13 | drift/clip_scorer.py (real CLIP — lazy torch, PyAV mid-point frame, pure-Python cosine, fail→0.0) | ✅ Done |
 | P13-live | Verify real CLIP scoring on an actual Higgsfield .mp4 (needs a real generated video) | ⬜ At deploy/real-run |
-| P14 | README, finalize, full integrity sweep | ▶ Next |
+| P14 | README + .env.example + TODO sweep + final gates | ✅ Done |
+| P14.1 | Run-status lifecycle fix (PLANNING→EXECUTING→COMPLETE persisted; ABORTED unwired by design) | ✅ Done |
+| — | Milestone full-integrity sweep (separate session, whole-tree) | ▶ Final gate |
 
 A working mock demo exists at P10; CI-green regression coverage at P11; real
 generation from P12.
