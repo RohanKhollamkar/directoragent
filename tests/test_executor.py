@@ -119,8 +119,8 @@ class SpyHF:
     async def fetch_result(self, job_id):
         return await self._inner.fetch_result(job_id)
 
-    async def reconcile(self, idem_key):
-        return await self._inner.reconcile(idem_key)
+    async def reconcile(self, idem_key, shot):
+        return await self._inner.reconcile(idem_key, shot)
 
     async def preflight_cost(self, shot):
         return await self._inner.preflight_cost(shot)

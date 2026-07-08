@@ -185,9 +185,7 @@ class SqliteStateStore:
 
     async def update_run_status(self, run_id: str, status: RunStatus) -> None:
         """Write a RunStatus lifecycle transition (PLANNING -> EXECUTING ->
-        COMPLETE / ABORTED). Implementation extra like list_runs(), not part of
-        the StateStore Protocol — Protocol reconciliation is deferred (the
-        Protocol is a frozen foundation file)."""
+        COMPLETE / ABORTED)."""
         conn = await self._connection()
         await conn.execute(
             "UPDATE runs SET status = ? WHERE run_id = ?",
@@ -197,7 +195,7 @@ class SqliteStateStore:
     # --- Read / resume ------------------------------------------------------
     async def list_runs(self) -> list[tuple[str, str, float]]:
         """All runs as (run_id, status, total_cost), oldest first. Used by the
-        CLI `list` command; not part of the StateStore Protocol."""
+        CLI `list` command."""
         conn = await self._connection()
         async with conn.execute(
             "SELECT run_id, status, total_cost FROM runs ORDER BY created_at"

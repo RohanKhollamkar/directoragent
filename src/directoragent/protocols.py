@@ -8,7 +8,7 @@ concrete client.
 
 from typing import Protocol
 
-from directoragent.schema import Attempt, RunState, SceneModel, Shot
+from directoragent.schema import Attempt, RunState, RunStatus, SceneModel, Shot
 
 
 # --- Phase 1 -----------------------------------------------------------------
@@ -39,10 +39,15 @@ class HiggsfieldClient(Protocol):
         """Return the result asset URL/path for a succeeded job."""
         ...
 
-    async def reconcile(self, idem_key: str) -> str | None:
-        """Look up an existing job by idem_key (used on restart to avoid
-        double-submitting after a crash in the SUBMITTING window).
-        Return job_id if one exists, else None."""
+    async def reconcile(self, idem_key: str, shot: Shot) -> str | None:
+        """Look up an existing job for this attempt (used on restart to avoid
+        double-submitting after a crash in the SUBMITTING window). The real
+        adapter derives a content fingerprint from the persisted `shot` at
+        call time — crash-safe, no in-memory state; the API has no idempotency
+        key. The mock matches `idem_key` directly. Zero or MULTIPLE matches
+        return None: prompts are identical across a shot's quality-retry
+        attempts, so multiple matches are ambiguous and a fresh submit is the
+        conservative fallback. Return job_id only on exactly one match."""
         ...
 
     async def preflight_cost(self, shot: Shot) -> float:
@@ -81,3 +86,7 @@ class StateStore(Protocol):
 
     async def load_run(self, run_id: str) -> RunState | None: ...      # powers re-attach
     async def add_cost(self, run_id: str, delta: float) -> float: ...  # returns new total
+
+    # Run lifecycle + listing.
+    async def update_run_status(self, run_id: str, status: RunStatus) -> None: ...
+    async def list_runs(self) -> list[tuple[str, str, float]]: ...     # (run_id, status, total_cost)

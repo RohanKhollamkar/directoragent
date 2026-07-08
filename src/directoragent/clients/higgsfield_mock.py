@@ -46,8 +46,10 @@ class MockHiggsfieldClient:
         await asyncio.sleep(_LATENCY_S)
         return f"mock://results/{job_id}.mp4"
 
-    async def reconcile(self, idem_key: str) -> str | None:
+    async def reconcile(self, idem_key: str, shot: Shot) -> str | None:
         await asyncio.sleep(_LATENCY_S)
+        # Key-based: the mock records every submit by idem_key. `shot` is the
+        # Protocol's fingerprint source (used by the real adapter) — unused here.
         return self._jobs.get(idem_key)
 
     async def preflight_cost(self, shot: Shot) -> float:
