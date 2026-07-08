@@ -41,8 +41,8 @@ stop" so each step is reviewable before merge.
 | P12.5 | REST transport (SDK-derived contract, stub-tested; live smoke deploy-gated) | ✅ |
 | P13 | drift/clip_scorer.py (real CLIP, lazy torch, PyAV mid-point frame) | ✅ |
 | P14 | README + .env.example + TODO sweep + final gates | ✅ |
-| P14.1 | Run-status lifecycle fix (PLANNING→EXECUTING→COMPLETE written to DB) | ▶ |
-| — | Milestone full-integrity sweep (VERIFICATION.md, whole-tree) | ⬜ Final gate |
+| P14.1 | Run-status lifecycle fix (PLANNING→EXECUTING→COMPLETE written to DB) | ✅ |
+| — | Milestone full-integrity sweep (VERIFICATION.md, whole-tree) | ▶ Final gate |
 | — | Deploy-gated live items (P12.5-live ×2, P13-live, _upload_local) | ⬜ At deploy |
 
 > **Execution note:** the original P12/P13/P14 prompts below are the pre-discovery
