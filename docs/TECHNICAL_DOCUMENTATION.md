@@ -75,7 +75,7 @@ those hashes in the same commit, which makes any modification visible in review.
 | `clients/higgsfield_mock.py` | HiggsfieldClient (no network; supports reconcile) | Built (P3a) |
 | `clients/higgsfield.py` | HiggsfieldClient (real MCP: catalog mapping, media handshake, motion-into-prompt, fingerprint reconcile, get_cost preflight) | Built (P12.3) |
 | `drift/mock_scorer.py` | DriftScorer (synthetic, deterministic fail-then-pass) | Built (P4a) |
-| `drift/clip_scorer.py` | DriftScorer (lazy open_clip + torch) | Planned (P13) |
+| `drift/clip_scorer.py` | DriftScorer (lazy open_clip+torch; PyAV mid-point frame from video; pure-Python cosine; fail→0.0, never raises) | Built (P13) |
 
 ### Layer C — Orchestration
 
@@ -619,8 +619,9 @@ a false positive.
 | P12.4 | First cheap real shot — Wan 2.6 @ 5s, 13 credits; confirmed status vocabulary + response envelope + media-path constraint | ✅ Done |
 | P12.5 | REST transport (higgsfield_rest_transport.py, KEY_ID:KEY_SECRET, SDK-derived contract, envelope normalization) — built + stub-tested; live smoke deferred (egress-blocked) | ✅ Done |
 | P12.5-live | First out-of-sandbox REST run: confirm per-model submit endpoint (placeholder now) + resolve get_cost-over-REST gap | ⬜ At deploy/allowlist |
-| P13 | drift/clip_scorer.py (real CLIP) | Planned |
-| P14 | README, finalize, full integrity sweep | Planned |
+| P13 | drift/clip_scorer.py (real CLIP — lazy torch, PyAV mid-point frame, pure-Python cosine, fail→0.0) | ✅ Done |
+| P13-live | Verify real CLIP scoring on an actual Higgsfield .mp4 (needs a real generated video) | ⬜ At deploy/real-run |
+| P14 | README, finalize, full integrity sweep | ▶ Next |
 
 A working mock demo exists at P10; CI-green regression coverage at P11; real
 generation from P12.
@@ -648,18 +649,31 @@ generation from P12.
 
 ## 11. Deferred & future work (with rationale)
 
-| Item | Why deferred |
+| Item | Status / why deferred |
 |---|---|
-| Real Higgsfield adapter (P12) | Mock-first unblocks the entire pipeline with zero credentials/cost; the real adapter is a drop-in once tool names are confirmed by inspecting the MCP. |
-| Real CLIP scorer (P13) | Same mock-first reasoning; torch is heavy and only needed for real drift scoring. |
+| Real Higgsfield adapter (P12) | ✅ BUILT (P12.3), proven live at P12.4 (agent-mediated). |
+| REST transport (P12.5) | ✅ BUILT + stub-tested; live verification deploy-gated (see live table below). |
+| Real CLIP scorer (P13) | ✅ BUILT; real-model-on-real-video verification deploy-gated (see below). |
 | User-defined custom arcs | The template mechanism is built v1 (default + named); accepting arbitrary user beat-lists is additive and not needed to prove the concept. Stubbed behind the same arc interface. |
 | Shot-to-shot chaining (PREVIOUS_SHOT references at generation time) | True chaining serialises parts of the fan-out and introduces an ordering dependency. v1 resolves all generation references to the source photo and records reference.type as metadata only, keeping the fan-out fully parallel. |
-| Automated shot_style↔render_class consistency check | Trusting the validated render_class is simpler and avoids false corrections from a brittle classifier. Prevention (prompt rubric), detection (plan review), and containment (retry + cost ceiling) cover the gap. Build only if real runs show a high mismatch rate — failure data should drive the design. |
-| motion_preset ↔ Higgsfield reconciliation | RESOLVED at P12 discovery: no motion enum exists on the API; motion_preset is internal metadata + a prompt hint (see §7). Retained for a future preset_id mapping. |
-| Status-string vocabulary confirmation | Unconfirmable without spending credits; the adapter ships defensive normalization and the first cheap real shot (P12.4) confirms the real strings. |
-| render_class expansion beyond four | Cardinality tracks the model roster; four models exist today. Adding a class is a localized, on-demand routine (see §12), not a v1 concern. |
+| Automated shot_style↔render_class consistency check | Trusting the validated render_class is simpler and avoids false corrections from a brittle classifier. Prevention (prompt rubric), detection (plan review), and containment (retry + cost ceiling) cover the gap. Build only if real runs show a high mismatch rate. |
+| motion_preset ↔ Higgsfield reconciliation | RESOLVED at P12: no motion enum on the API; motion_preset is internal metadata + prompt hint (§7). Retained for a future preset_id mapping. |
+| Multi-frame drift sampling | v1 scores a single mid-point video frame (cheap, correct baseline). Multi-frame sampling is a data-driven refinement if real drift scores don't track perceived fidelity. |
+| render_class expansion beyond four | Cardinality tracks the model roster; four models exist today. Adding a class is a localized, on-demand routine (§12). |
 | Postgres backend | The StateStore protocol makes it a config-time swap; SQLite covers development and the demo. |
-| Cost-model calibration | COST_PER_SECOND values are placeholders until validated against real Higgsfield pricing; required before trusting `--max-cost` in real mode. |
+| Cost-model calibration | COST_PER_SECOND placeholders; real credits come from get_cost (MCP) — but see the REST get_cost gap below. |
+
+### Deploy-gated live verification (cannot run in the Claude sandbox — egress-blocked)
+
+These are BUILT and unit/stub-verified; each needs one run in an allowlisted or
+deployed environment to close. None blocks further in-sandbox development.
+
+| Marker | What it needs | Consequence until done |
+|---|---|---|
+| `TODO(P12.5-live)` #1 | Confirm the per-model submit endpoint (`POST /{endpoint}`, CMS-driven, absent from the SDK). Transport uses a `/v2/generate` PLACEHOLDER. | Real REST submit hits a placeholder URL — cannot generate over REST. |
+| `TODO(P12.5-live)` #2 | Resolve `get_cost` over REST (no SDK equivalent). Recommended: degrade to the static COST_PER_SECOND table for projection + reconcile actual cost post-submit. | REST/deploy mode has no pre-spend cost preflight; plan-review shows estimates, not real credits. |
+| `TODO(P13-live)` | Run real CLIP scoring against an actual Higgsfield `.mp4`. | Scoring logic is verified; the real-model-on-real-video path is unproven. |
+| `_upload_local` (P12.4) | Verify the presigned-PUT upload path in a container without the sandbox egress proxy. | Coded + shape-verified; not end-to-end-tested. `media_import_url` (URL-based) works everywhere as the fallback. |
 
 ---
 
