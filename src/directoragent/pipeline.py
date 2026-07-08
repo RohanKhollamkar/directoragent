@@ -152,7 +152,15 @@ async def run(
                 return None  # stop before any spend; `da resume <run_id>` executes
 
         # Resume from PLANNING or EXECUTING both fall through to execution.
+        # Persist the EXECUTING transition (covers resuming a PLANNING run;
+        # a no-op rewrite on fresh runs already created as EXECUTING).
+        # ABORTED stays unwired: the cost-ceiling check raises BEFORE any
+        # persistence on fresh runs, so there is no persisted run to mark —
+        # it becomes reachable only if a post-persistence abort path is added.
+        await store.update_run_status(run_id, RunStatus.EXECUTING)
         await executor.run_all(state, store, hf, scorer, settings.max_cost_usd)
-        return assembler.assemble(await store.load_run(run_id))
+        storyboard = assembler.assemble(await store.load_run(run_id))
+        await store.update_run_status(run_id, RunStatus.COMPLETE)
+        return storyboard
     finally:
         await store.close()

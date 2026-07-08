@@ -21,6 +21,7 @@ from directoragent.schema import (
     AttemptStatus,
     Reference,
     RunState,
+    RunStatus,
     SceneModel,
     Shot,
 )
@@ -181,6 +182,17 @@ class SqliteStateStore:
         ) as cur:
             row = await cur.fetchone()
         return float(row["total_cost"])
+
+    async def update_run_status(self, run_id: str, status: RunStatus) -> None:
+        """Write a RunStatus lifecycle transition (PLANNING -> EXECUTING ->
+        COMPLETE / ABORTED). Implementation extra like list_runs(), not part of
+        the StateStore Protocol — Protocol reconciliation is deferred (the
+        Protocol is a frozen foundation file)."""
+        conn = await self._connection()
+        await conn.execute(
+            "UPDATE runs SET status = ? WHERE run_id = ?",
+            (status.value, run_id),
+        )
 
     # --- Read / resume ------------------------------------------------------
     async def list_runs(self) -> list[tuple[str, str, float]]:

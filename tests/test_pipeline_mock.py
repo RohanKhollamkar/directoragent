@@ -15,6 +15,17 @@ def _settings(**over) -> Settings:
     return Settings(**base)
 
 
+async def _db_status(settings: Settings, run_id: str) -> RunStatus:
+    """The status `da status`/`da list` see — read back via load_run."""
+    store = SqliteStateStore(settings.state_db_path)
+    try:
+        state = await store.load_run(run_id)
+        assert state is not None
+        return state.status
+    finally:
+        await store.close()
+
+
 async def test_full_mock_pipeline_yields_storyboard(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # isolate .directoragent/ writes
     sb = await pipeline.run("assets/p.png", "a noir chase", "run1", _settings())
@@ -26,6 +37,9 @@ async def test_full_mock_pipeline_yields_storyboard(tmp_path, monkeypatch):
     assert sb_path.exists()
     data = json.loads(sb_path.read_text())
     assert data["run_id"] == "run1" and len(data["results"]) == 6
+
+    # Lifecycle: a finished run is persisted as COMPLETE (STEP 14.1).
+    assert await _db_status(_settings(), "run1") == RunStatus.COMPLETE
 
 
 async def test_plan_only_then_resume(tmp_path, monkeypatch):
@@ -43,8 +57,9 @@ async def test_plan_only_then_resume(tmp_path, monkeypatch):
     assert state.status == RunStatus.PLANNING
     assert state.attempts == {}  # no generation happened
 
-    # Resume completes it into a full storyboard.
+    # Resume completes it into a full storyboard, PLANNING -> COMPLETE in DB.
     sb = await pipeline.run("", "", "run2", settings)
     assert isinstance(sb, Storyboard)
     assert len(sb.results) == 6
     assert Path(".directoragent/runs/run2/storyboard.json").exists()
+    assert await _db_status(settings, "run2") == RunStatus.COMPLETE
