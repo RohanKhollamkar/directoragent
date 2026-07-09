@@ -531,9 +531,21 @@ such egress restriction) and must be verified there. The presigned URL signs
 Confirmed shapes: `media_upload` → `{"uploads":[{"upload_url","media_id","url",
 "content_type","expires_in_seconds","method":"PUT",...}]}`; `media_import_url` →
 `{"media_id","type","content_type","source_url"}`. Per-model start-image role:
-`start_image` for Seedance/Kling/Veo, `image_references` for Wan. Live result
-example (P12.4): job `58c50606…`, asset at `results[0].results.rawUrl`
-(CloudFront .mp4), spend 13 credits (100 → 87), matching preflight exactly.
+`start_image` for Seedance/Kling/Veo, `image_references` for Wan.
+
+**Live result record (P12.4) — the reference artifact for the deferred
+`TODO(P13-live)` run.** Job `58c50606-ee3a-46cd-8904-8e4e99bd0298` (wan2_6, 5s,
+`completed`); prompt "Abstract ink dispersing in water… Camera: locked-off static
+camera."; spend 13 credits (100 → 87), matching the `get_cost` preflight exactly.
+Asset (at `results[0].results.rawUrl`):
+
+```
+https://d8j0ntlcm91z4.cloudfront.net/user_3FdggLn5IvFD0ORQbHZhSgip7Mf/hf_20260706_160230_58c50606-ee3a-46cd-8904-8e4e99bd0298.mp4
+```
+
+Recorded here because it is the input the real-CLIP verification needs and is not
+otherwise reconstructible — it survived the deletion of `P12.4_RESUME.md` only in
+git history (`git show 415bdd6`). Source image: `assets/test.png` (committed).
 
 **Reliability note.** Higgsfield's live server returned transient "Something went
 wrong" errors frequently (media_upload failed 3× before succeeding, and the first
@@ -699,7 +711,7 @@ deployed environment to close. None blocks further in-sandbox development.
 |---|---|---|
 | `TODO(P12.5-live)` #1 | Confirm the per-model submit endpoint (`POST /{endpoint}`, CMS-driven, absent from the SDK). Transport uses a `/v2/generate` PLACEHOLDER. | Real REST submit hits a placeholder URL — cannot generate over REST. |
 | `TODO(P12.5-live)` #2 | Resolve `get_cost` over REST (no SDK equivalent). Recommended: degrade to the static COST_PER_SECOND table for projection + reconcile actual cost post-submit. | REST/deploy mode has no pre-spend cost preflight; plan-review shows estimates, not real credits. |
-| `TODO(P13-live)` | Run real CLIP scoring against an actual Higgsfield `.mp4`. | Scoring logic is verified; the real-model-on-real-video path is unproven. |
+| `TODO(P13-live)` | Run real CLIP scoring against the P12.4 `.mp4` (URL recorded in §7). Needs TWO blocked hosts: Higgsfield's CloudFront (the video) and `huggingface.co` + its weight CDN (`cas-bridge.xethub.hf.co` / `cdn-lfs.huggingface.co`) for the ViT-B-32 weights on first `_ensure_model()`. | Scoring logic verified against controlled embeddings; the real-model-on-real-video path is unproven. Also yields threshold-calibration data (does the score clear ABSTRACT_FLUID's 0.65?). |
 | `_upload_local` (P12.4) | Verify the presigned-PUT upload path in a container without the sandbox egress proxy. | Coded + shape-verified; not end-to-end-tested. `media_import_url` (URL-based) works everywhere as the fallback. |
 
 ---
