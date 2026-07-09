@@ -623,7 +623,10 @@ a false positive.
 | P13-live | Verify real CLIP scoring on an actual Higgsfield .mp4 (needs a real generated video) | ⬜ At deploy/real-run |
 | P14 | README + .env.example + TODO sweep + final gates | ✅ Done |
 | P14.1 | Run-status lifecycle fix (PLANNING→EXECUTING→COMPLETE persisted; ABORTED unwired by design) | ✅ Done |
-| — | Milestone full-integrity sweep (separate session, whole-tree) | ▶ Final gate |
+| — | Milestone full-integrity sweep (separate session, whole-tree) | ✅ Done — 8 concerns found |
+| SWEEP-FIX-1 | C1,C3,C4,C5,C6 (plan-review contract, reconcile cost, budget race, status lifecycle, orphan rows) | ✅ Done |
+| SWEEP-FIX-2 | C2,C7 (Protocol reconciliation + crash-safe reconcile) — approved foundation reopening | ✅ Done |
+| — | Focused re-verification (separate session) | ✅ **All 8 resolved, gates green** (58 tests) |
 
 A working mock demo exists at P10; CI-green regression coverage at P11; real
 generation from P12.
@@ -664,6 +667,28 @@ generation from P12.
 | render_class expansion beyond four | Cardinality tracks the model roster; four models exist today. Adding a class is a localized, on-demand routine (§12). |
 | Postgres backend | The StateStore protocol makes it a config-time swap; SQLite covers development and the demo. |
 | Cost-model calibration | COST_PER_SECOND placeholders; real credits come from get_cost (MCP) — but see the REST get_cost gap below. |
+
+### Integrity sweep record (whole-tree adversarial review, post-P14.1)
+
+All deterministic gates were green and every checklist invariant passed — and the
+sweep still surfaced **eight concerns**, three of them live-reproduced defects no
+unit test covered. This is the documented reason the AI-review layer sits on top
+of the gates rather than being replaced by them.
+
+| # | Concern | Resolution |
+|---|---|---|
+| C1 | `--review` on an *existing* run-id silently executed and spent (plan_only early-return lived only in the fresh-run branch). Reproduced live. | Fixed (SWEEP-FIX-1): `elif plan_only` branch prints the plan and returns None on existing runs — no status write, no executor. |
+| C2 | Real-adapter `reconcile` used an **in-memory** fingerprint map, so it could never survive the cross-process crash it exists for. CLAUDE.md's "prompts are unique per attempt" premise was also false in code (identical across quality-retries). | Fixed (SWEEP-FIX-2, Protocol reopening): `reconcile(idem_key, shot)` derives the fingerprint from the persisted Shot at call time; exactly-one match → recover, zero-or-multiple → None → fresh submit (rare double-charge accepted). Doc premise corrected. |
+| C3 | Reconcile-recovered submissions never called `add_cost` — Higgsfield charged, the ledger did not. | Fixed (SWEEP-FIX-1): recovery branch charges exactly once and persists `attempt.cost`. |
+| C4 | Budget guard raced across the fan-out: six coroutines read a stale shared total, so the ceiling could be overshot by ~5 shots. | Fixed (SWEEP-FIX-1): shared `asyncio.Lock`; preflight + ceiling check + cost reservation are atomic; rollback if submit fails pre-`add_cost`. In-memory total = DB total + outstanding reservations. |
+| C5 | Resuming a COMPLETE run transiently rewrote status to EXECUTING. | Fixed (SWEEP-FIX-1): EXECUTING write gated on `status != COMPLETE`. |
+| C6 | Orphaned SUBMITTING rows (reconcile → None) stayed non-terminal forever while consuming a retry slot. | Fixed (SWEEP-FIX-1): closed as FAILED_ERROR with an explanatory error before the next attempt opens. |
+| C7 | `update_run_status`/`list_runs` were implementation extras, not on the frozen StateStore Protocol — quietly falsifying the "Postgres swap = implement the Protocol" claim. | Fixed (SWEEP-FIX-2): both added to the Protocol; hash regen in the same commit. |
+| C8 | REST real mode is not merely "missing a cost gate" — `preflight_cost` raises at the first pipeline step, so it is **fully inoperative**. | Accepted as deploy-gated (`TODO(P12.5-live)` #2); wording sharpened across README/CLAUDE.md/docs. |
+
+**Focused re-verification (separate session):** all eight confirmed resolved with
+file:line evidence; C1 and C4 re-reproduced live; foundation hashes MATCH after the
+approved `protocols.py` reopening; 58 tests green; `import directoragent` torch-free.
 
 ### Deploy-gated live verification (cannot run in the Claude sandbox — egress-blocked)
 
