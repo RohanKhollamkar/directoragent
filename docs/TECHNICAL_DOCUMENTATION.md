@@ -558,6 +558,51 @@ cheap real shot (Wan 2.6 @ 5s, **manually triggered by the operator** — the
 first paid call is a conscious act, and it doubles as the status-vocabulary
 discovery run, resolving the TODO(P12.4) markers in poll()).
 
+### D2 — REST transport wired to the confirmed Cloud API contract
+
+The P12.5 transport was built against SDK-derived guesses; D2 corrects it
+against the confirmed Higgsfield Cloud API docs + DoP Standard reference
+(stub-tested against the recorded shapes — no live/paid call; the live smoke
+remains deploy-time).
+
+**Two catalogs, one seam.** The MCP connector and the REST Cloud API are
+DIFFERENT Higgsfield products behind the same `call_tool` seam: MCP exposes the
+Seedance/Kling/Veo/Wan catalog (plus-plan credits); REST Cloud exposes DoP/Soul
+(separate cloud.higgsfield.ai API credit pool). The transport therefore carries
+its own `REST_MODEL_CATALOG` (render_class → REST model). D2 maps
+COMPLEX_MOTION → `higgsfield-ai/dop/standard` as the demonstration — DoP
+("Director of Photography") is the cinematic image→video model whose signature
+capability is a real camera-motion parameter, matching COMPLEX_MOTION's
+routing intent. The other three render_classes raise a clear HiggsfieldError
+over REST; completing the mapping is a documented config step, not code work.
+This is a product-namespace translation of the already-routed shot, not a
+re-route — invariant #3 (route() only in the planner) is untouched.
+
+**Confirmed contract (resolves TODO(P12.5-live) #1):** submit is
+`POST /{model_id}` — the model id IS the path; poll
+`GET /requests/{request_id}/status`; cancel `POST /requests/{request_id}/cancel`.
+Responses are FLAT (`{status, request_id, video:{url}, images:[{url}]}`); the
+video asset is at `video.url`, normalized by the transport into the MCP
+`{"results":[{…, "results":{"rawUrl":…}}]}` envelope so the adapter stays
+shape-stable. Status vocabulary: `queued`/`in_progress` → running, `completed`
+→ succeeded, `nsfw`/`failed` → failed (BOTH refund credits); the defensive
+unknown→running branch stays. DoP Standard body:
+`{"seed":null,"prompt":str,"motions":null,"image_url":str,"enhance_prompt":true}`
+— no duration/aspect_ratio. `motions` is a REAL DoP parameter (unlike MCP,
+where motion folds into the prompt); wired as null — TODO(D3-motions) maps
+motion_preset via `GET /v1/motions`. The start image is `image_url`: a public
+URL passes straight through, a local file goes upload-URL → presigned PUT →
+`public_url` → `image_url`.
+
+**Cost fallback (resolves TODO(P12.5-live) #2):** the REST API has NO cost
+endpoint (submit/status/cancel only — confirmed). REST `preflight_cost`
+degrades to the static COST_PER_SECOND estimate; actual credits reconcile
+post-submit from the terminal status (refund on `nsfw`/`failed`, so only
+`completed` costs). There is also no generations-list endpoint, so
+`reconcile()` is MCP-transport-only: over REST it raises, meaning a resume that
+hits a crashed-SUBMITTING row fails loudly (known D2 limitation; fresh runs
+never call reconcile).
+
 ### Mock-mode planning
 
 `MockVisionProvider` returns a canned SceneModel and cannot serve the planner,
@@ -630,9 +675,10 @@ a false positive.
 | P12.3 | clients/higgsfield.py — real MCP adapter (call_tool seam, catalog mapping, media handshake, motion-into-prompt, defensive status norm, fingerprint reconcile, get_cost preflight) | ✅ Done |
 | P12.4 | First cheap real shot — Wan 2.6 @ 5s, 13 credits; confirmed status vocabulary + response envelope + media-path constraint | ✅ Done |
 | P12.5 | REST transport (higgsfield_rest_transport.py, KEY_ID:KEY_SECRET, SDK-derived contract, envelope normalization) — built + stub-tested; live smoke deferred (egress-blocked) | ✅ Done |
-| P12.5-live | First out-of-sandbox REST run: confirm per-model submit endpoint (placeholder now) + resolve get_cost-over-REST gap | ⬜ At deploy/allowlist |
+| D2 | REST transport corrected to the confirmed Cloud API contract (`POST /{model_id}`, flat envelope from `video.url`, 5-status vocab, REST_MODEL_CATALOG → DoP Standard, static-cost fallback) — resolves TODO(P12.5-live) #1 + #2 | ✅ Done |
+| P12.5-live | First out-of-sandbox REST live smoke (first paid REST submit; contract gaps closed at D2) | ⬜ At deploy |
 | P13 | drift/clip_scorer.py (real CLIP — lazy torch, PyAV mid-point frame, pure-Python cosine, fail→0.0) | ✅ Done |
-| P13-live | Verify real CLIP scoring on an actual Higgsfield .mp4 (needs a real generated video) | ⬜ At deploy/real-run |
+| P13-live | Real CLIP scoring on the P12.4 .mp4 (allowlisted run): ink-seed = 0.89 (clears ABSTRACT_FLUID 0.65), white-PNG control = 0.42, dead URL → 0.0 logged | ✅ Done |
 | P14 | README + .env.example + TODO sweep + final gates | ✅ Done |
 | P14.1 | Run-status lifecycle fix (PLANNING→EXECUTING→COMPLETE persisted; ABORTED unwired by design) | ✅ Done |
 | — | Milestone full-integrity sweep (separate session, whole-tree) | ✅ Done — 8 concerns found |
@@ -669,7 +715,7 @@ generation from P12.
 | Item | Status / why deferred |
 |---|---|
 | Real Higgsfield adapter (P12) | ✅ BUILT (P12.3), proven live at P12.4 (agent-mediated). |
-| REST transport (P12.5) | ✅ BUILT + stub-tested; live verification deploy-gated (see live table below). |
+| REST transport (P12.5, corrected at D2) | ✅ BUILT + wired to the confirmed Cloud API contract, stub-tested; live smoke (first paid REST submit) deploy-gated (see live table below). |
 | Real CLIP scorer (P13) | ✅ BUILT; real-model-on-real-video verification deploy-gated (see below). |
 | User-defined custom arcs | The template mechanism is built v1 (default + named); accepting arbitrary user beat-lists is additive and not needed to prove the concept. Stubbed behind the same arc interface. |
 | Shot-to-shot chaining (PREVIOUS_SHOT references at generation time) | True chaining serialises parts of the fan-out and introduces an ordering dependency. v1 resolves all generation references to the source photo and records reference.type as metadata only, keeping the fan-out fully parallel. |
@@ -696,7 +742,7 @@ of the gates rather than being replaced by them.
 | C5 | Resuming a COMPLETE run transiently rewrote status to EXECUTING. | Fixed (SWEEP-FIX-1): EXECUTING write gated on `status != COMPLETE`. |
 | C6 | Orphaned SUBMITTING rows (reconcile → None) stayed non-terminal forever while consuming a retry slot. | Fixed (SWEEP-FIX-1): closed as FAILED_ERROR with an explanatory error before the next attempt opens. |
 | C7 | `update_run_status`/`list_runs` were implementation extras, not on the frozen StateStore Protocol — quietly falsifying the "Postgres swap = implement the Protocol" claim. | Fixed (SWEEP-FIX-2): both added to the Protocol; hash regen in the same commit. |
-| C8 | REST real mode is not merely "missing a cost gate" — `preflight_cost` raises at the first pipeline step, so it is **fully inoperative**. | Accepted as deploy-gated (`TODO(P12.5-live)` #2); wording sharpened across README/CLAUDE.md/docs. |
+| C8 | REST real mode is not merely "missing a cost gate" — `preflight_cost` raises at the first pipeline step, so it is **fully inoperative**. | Accepted as deploy-gated (`TODO(P12.5-live)` #2); wording sharpened across README/CLAUDE.md/docs. **Resolved at D2:** REST preflight now returns the static COST_PER_SECOND estimate; REST real mode is operative. |
 
 **Focused re-verification (separate session):** all eight confirmed resolved with
 file:line evidence; C1 and C4 re-reproduced live; foundation hashes MATCH after the
@@ -709,9 +755,10 @@ deployed environment to close. None blocks further in-sandbox development.
 
 | Marker | What it needs | Consequence until done |
 |---|---|---|
-| `TODO(P12.5-live)` #1 | Confirm the per-model submit endpoint (`POST /{endpoint}`, CMS-driven, absent from the SDK). Transport uses a `/v2/generate` PLACEHOLDER. | Real REST submit hits a placeholder URL — cannot generate over REST. |
-| `TODO(P12.5-live)` #2 | Resolve `get_cost` over REST (no SDK equivalent). Recommended: degrade to the static COST_PER_SECOND table for projection + reconcile actual cost post-submit. | REST/deploy mode has no pre-spend cost preflight; plan-review shows estimates, not real credits. |
-| `TODO(P13-live)` | Run real CLIP scoring against the P12.4 `.mp4` (URL recorded in §7). Needs TWO blocked hosts: Higgsfield's CloudFront (the video) and `huggingface.co` + its weight CDN (`cas-bridge.xethub.hf.co` / `cdn-lfs.huggingface.co`) for the ViT-B-32 weights on first `_ensure_model()`. | Scoring logic verified against controlled embeddings; the real-model-on-real-video path is unproven. Also yields threshold-calibration data (does the score clear ABSTRACT_FLUID's 0.65?). |
+| ~~`TODO(P12.5-live)` #1~~ | **RESOLVED at D2:** real submit endpoint confirmed as `POST /{model_id}` (the model id IS the path, e.g. `higgsfield-ai/dop/standard`); the `/v2/generate` placeholder is gone. | — |
+| ~~`TODO(P12.5-live)` #2~~ | **RESOLVED at D2:** confirmed NO REST cost endpoint exists; `preflight_cost` degrades to the static COST_PER_SECOND estimate, actual credits reconcile post-submit (`nsfw`/`failed` refund). | Plan-review over REST shows estimates, not real credits (inherent — no cost endpoint). |
+| REST live smoke | First paid REST submit in a deployed/allowlisted environment (contract gaps closed at D2; only end-to-end confirmation remains). | REST path stub-verified only. |
+| ~~`TODO(P13-live)`~~ | **RESOLVED (allowlisted run, 2026-07-19):** real CLIP on the P12.4 `.mp4` — ink-seed vs video = **0.89** (clears ABSTRACT_FLUID's 0.65), white-PNG control = **0.42** (discriminates), dead URL → 0.0 + WARNING. Weights via `us.aws.cdn.hf.co` (HF migrated off `cas-bridge`; in-sandbox runs need `HF_HUB_DISABLE_XET=1`). | — |
 | `_upload_local` (P12.4) | Verify the presigned-PUT upload path in a container without the sandbox egress proxy. | Coded + shape-verified; not end-to-end-tested. `media_import_url` (URL-based) works everywhere as the fallback. |
 
 ---

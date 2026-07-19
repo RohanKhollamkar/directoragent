@@ -127,27 +127,49 @@ unused).
 - Agent-mediated (in-session demo, proven at P12.4): call_tool = the Claude agent
   invoking mcp__Higgsfield__* via the OAuth connector. Only works in a Claude
   session. This is what `main` demos with.
-- REST (P12.5, deployable — BUILT): call_tool = `HiggsfieldRestTransport`,
-  authenticated httpx to `platform.higgsfield.ai`, header
-  `Authorization: Key KEY_ID:KEY_SECRET`. Runs anywhere. Config:
+- REST (P12.5, corrected to the confirmed Cloud API contract at D2): call_tool =
+  `HiggsfieldRestTransport`, authenticated httpx to `platform.higgsfield.ai`,
+  header `Authorization: Key KEY_ID:KEY_SECRET`. Runs anywhere. Config:
   `higgsfield_key_id` + `higgsfield_key_secret` + `higgsfield_base_url`.
-  Contract derived from the official `higgsfield-js` v2 SDK. Selected in
-  pipeline real-mode when both creds are set; ADDITIVE — agent path untouched.
+  Selected in pipeline real-mode when both creds are set; ADDITIVE — agent path
+  untouched.
+  - **TWO CATALOGS, one call_tool seam:** MCP exposes Seedance/Kling/Veo/Wan;
+    the REST Cloud API exposes a DIFFERENT product line (DoP/Soul) with a
+    SEPARATE credit pool (MCP plus-plan credits vs cloud.higgsfield.ai API
+    credits). `REST_MODEL_CATALOG` (transport file) maps render_class → REST
+    model; D2 maps COMPLEX_MOTION → `higgsfield-ai/dop/standard` as the
+    demonstration — the other three render_classes raise a clear
+    HiggsfieldError over REST. Full mapping is a documented config step.
+  - Endpoints (confirmed — resolves TODO(P12.5-live) #1): submit is
+    `POST /{model_id}` (the model id IS the path); poll
+    `GET /requests/{request_id}/status`; cancel
+    `POST /requests/{request_id}/cancel`. Upload: `POST
+    /files/generate-upload-url` → presigned PUT → the `public_url` becomes the
+    generation input (`image_url`); a public URL goes straight into `image_url`
+    (media_import_url is a no-network passthrough).
   - REST envelope is FLAT (`{status, request_id, images:[{url}], video:{url}}`),
-    NOT the MCP `{"results":[…]}` wrapper. Transport normalizes REST→MCP so the
-    adapter stays shape-stable. Status adds `nsfw`/`canceled` → failed.
-  - Poll: `GET /requests/{request_id}/status`. Upload: `POST
-    /files/generate-upload-url` → presigned PUT.
-  - **TWO TODO(P12.5-live) gaps — block a real REST submit until the first
-    allowlisted/deployed run:** (1) the per-model submit endpoint is CMS-driven,
-    absent from the SDK — transport uses a `/v2/generate` PLACEHOLDER; read real
-    endpoints from the live API. (2) `get_cost` has no REST equivalent, so
-    `preflight_cost` over REST raises — REST real mode is fully inoperative until
-    TODO(P12.5-live) #2 is resolved (preflight raises at the first pipeline step).
-    Deploy-time fix (recommended): degrade to the static
-    COST_PER_SECOND table for projection + reconcile actual cost post-submit.
-  - The sandbox egress proxy blocks platform.higgsfield.ai (CONNECT 403), so REST
-    is verified only by stubbed unit tests here; the live smoke is deploy-time.
+    NOT the MCP `{"results":[…]}` wrapper; the video asset is at `video.url`.
+    Transport normalizes REST→MCP so the adapter stays shape-stable. Status
+    vocabulary (confirmed): `queued`/`in_progress` → running, `completed` →
+    succeeded, `nsfw`/`failed` → failed (BOTH refund credits); the defensive
+    unknown→running branch stays.
+  - DoP Standard body: `{"seed":null,"prompt":str,"motions":null,
+    "image_url":str,"enhance_prompt":true}` — no duration, no aspect_ratio.
+    `motions` is a REAL DoP parameter (unlike MCP, where motion folds into the
+    prompt); wired as null for now. TODO(D3-motions): map motion_preset → a DoP
+    motion value from `GET /v1/motions` once the catalog is fetched.
+  - Cost (resolves TODO(P12.5-live) #2): NO REST cost endpoint exists
+    (submit/status/cancel only — confirmed). REST `preflight_cost` degrades to
+    the static COST_PER_SECOND estimate; actual credits reconcile post-submit
+    from the terminal status (`nsfw`/`failed` refund, so only `completed`
+    costs). No generations-list endpoint either → reconcile() is
+    MCP-transport-only: over REST the transport raises HiggsfieldError, so
+    resuming a run with a crashed-SUBMITTING row fails loudly over REST
+    (known D2 limitation; fresh runs are unaffected — reconcile only fires in
+    that crash window).
+  - The sandbox egress proxy blocks platform.higgsfield.ai (CONNECT 403), so
+    REST is verified only by stubbed unit tests against the recorded contract
+    shapes; the live smoke (first paid REST submit) is deploy-time.
 
 ### 3. route() and drift_threshold() called ONLY in the planner
 The LLM proposes a `render_class` (the closed routing key). routing.py maps
