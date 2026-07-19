@@ -87,13 +87,17 @@ adapter. Only works inside a Claude session.
 transport normalizes REST's flat response envelope to the MCP shapes so the
 adapter never knows which transport it is on.
 
-> **Current status:** REST is built and stub-tested, with **two deploy-gated
-> TODOs** — the per-model submit endpoint is a placeholder (`/v2/generate`;
-> the real endpoints are CMS-driven and absent from the SDK), and `get_cost`
-> has **no REST equivalent**, so REST-mode plan-review shows **static
-> estimates, not live credits**, until resolved. See the deploy-gated table in
-> [docs/TECHNICAL_DOCUMENTATION.md](docs/TECHNICAL_DOCUMENTATION.md) §11 for
-> the full list.
+> **Current status:** REST is wired to the **confirmed Cloud API contract**
+> (D2): submit is `POST /{model_id}`, e.g. `higgsfield-ai/dop/standard`. Note
+> the REST Cloud API is a **different Higgsfield product** than the MCP
+> connector — it exposes the DoP/Soul catalog (separate credit pool), not
+> Seedance/Kling/Veo/Wan; one render_class (COMPLEX_MOTION → DoP Standard) is
+> mapped as the demonstration and the rest are a documented config step. The
+> REST API has **no cost endpoint**, so REST-mode plan-review shows **static
+> estimates, not live credits** (actual credits reconcile post-submit;
+> `nsfw`/`failed` refund). Stub-tested against the recorded contract shapes;
+> the first paid REST submit is deploy-time. See the deploy-gated table in
+> [docs/TECHNICAL_DOCUMENTATION.md](docs/TECHNICAL_DOCUMENTATION.md) §11.
 
 ## Drift scoring
 
@@ -117,7 +121,7 @@ Mock mode never imports torch.
   plan cost exceeds it, the run aborts before a single job is submitted.
 - In agent-mediated real mode the projection uses Higgsfield's `get_cost`
   no-spend preflight — real credits, not guesses. (REST mode degrades to
-  static estimates until its `get_cost` gap is resolved — see above.)
+  static estimates — the Cloud API has no cost endpoint; see above.)
 - Attempts are immutable rows: retries, first-try yield, and per-attempt cost
   are all visible after the fact, not averaged away.
 
