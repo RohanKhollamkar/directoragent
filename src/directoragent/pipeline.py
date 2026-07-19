@@ -9,6 +9,7 @@ the non-mock branch so that mock mode — and therefore CI — never imports tor
 or open_clip.
 """
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from directoragent.config import Settings
@@ -75,6 +76,12 @@ def _infer_arc(shots) -> str | None:
     return None
 
 
+# Plan-review sink: called with (state, projected_total, per_shot_costs) when
+# plan_only stops before spend. The CLI prints (print_plan, the default); the
+# web layer (web.py) injects a collector to build the HTTP response instead.
+PlanSink = Callable[["RunState", float, list[float]], None]
+
+
 def print_plan(state: RunState, projected: float, per_shot_costs: list[float]) -> None:
     print(f"=== PLAN  run_id={state.run_id} ===")
     print(f"arc: {_infer_arc(state.shots) or '(custom)'}")
@@ -98,6 +105,7 @@ async def run(
     settings: Settings,
     arc_name: str | None = None,
     plan_only: bool = False,
+    on_plan: "PlanSink" = print_plan,
 ) -> Storyboard | None:
     store = SqliteStateStore(settings.state_db_path)
 
@@ -148,14 +156,14 @@ async def run(
                 await store.save_shot(run_id, shot)
 
             if plan_only:
-                print_plan(state, projected, per_shot_costs)
+                on_plan(state, projected, per_shot_costs)
                 return None  # stop before any spend; `da resume <run_id>` executes
         elif plan_only:
             # Plan-review is "stop before spend" in ALL cases: on an existing
             # run-id it re-prints the persisted plan (costs recomputed) and
             # returns — no status write, no executor, no spend.
             per_shot_costs = [await hf.preflight_cost(s) for s in state.shots]
-            print_plan(state, sum(per_shot_costs), per_shot_costs)
+            on_plan(state, sum(per_shot_costs), per_shot_costs)
             return None
 
         # Resume from PLANNING or EXECUTING both fall through to execution.

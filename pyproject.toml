@@ -22,7 +22,10 @@ dependencies = [
 
 [project.optional-dependencies]
 clip = ["torch", "open-clip-torch", "av", "pillow"]
-dev = ["pytest", "pytest-asyncio", "ruff"]
+web = ["fastapi", "uvicorn[standard]"]
+# fastapi repeated here so CI (`pip install -e ".[dev]"`) can run test_web.py;
+# TestClient itself rides on httpx, which is a base dependency.
+dev = ["pytest", "pytest-asyncio", "ruff", "fastapi"]
 
 [project.scripts]
 da = "directoragent.cli:app"
