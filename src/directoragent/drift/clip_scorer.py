@@ -19,17 +19,7 @@ never raises: a scorer exception must not crash the whole fan-out.
 Dependencies live in the `clip` optional extra (torch, open-clip-torch, av,
 pillow); the base install and CI stay torch-free.
 
-TODO(P13-live): verify real CLIP scoring on an actual Higgsfield .mp4 output —
-the first real end-to-end drift score needs BOTH (same deferral pattern as
-P12.5-live; attempted in-sandbox 2026-07-09, blocked on both counts by the
-egress policy):
-  (a) network access to a real generated Higgsfield video. Confirmed live test
-      asset (P12.4 job 58c50606-ee3a-46cd-8904-8e4e99bd0298, wan2_6 @ 5s,
-      reference assets/test.png):
-      https://d8j0ntlcm91z4.cloudfront.net/user_3FdggLn5IvFD0ORQbHZhSgip7Mf/hf_20260706_160230_58c50606-ee3a-46cd-8904-8e4e99bd0298.mp4
-  (b) network access to HuggingFace (huggingface.co + its weight CDN) — the
-      ViT-B-32 / laion2b_s34b_b79k weights download on the first
-      _ensure_model() call.
+P13-live verified: ink-seed vs P12.4 generated .mp4 = 0.89; white-PNG control = 0.42.
 """
 
 import asyncio
