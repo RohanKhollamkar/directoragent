@@ -32,7 +32,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from directoragent import pipeline
 from directoragent.config import Settings
@@ -80,13 +80,47 @@ async def _load_run(run_id: str, settings: Settings) -> RunState | None:
         await store.close()
 
 
+# Junk-as-absent (D3c): optional fields carrying an empty string or an obvious
+# placeholder — notably the literal "string" that Swagger's default example
+# fills in — behave exactly like absent fields instead of crashing the plan.
+_PLACEHOLDER_VALUES = {"", "string"}
+
+
+def _clean(value: str | None) -> str | None:
+    if value is None:
+        return None
+    v = value.strip()
+    return None if v.lower() in _PLACEHOLDER_VALUES else v
+
+
 # --- API models (thin HTTP shapes; internal models live in schema.py) --------
 class PlanRequest(BaseModel):
+    # A valid, executable /docs example: clicking "Execute" on the pre-filled
+    # Swagger body must work without edits (no "string" placeholders).
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "description": "a noir chase through rain-slicked streets",
+                    "arc": "dramatic",
+                }
+            ]
+        }
+    )
+
     description: str
-    photo_url: str | None = None     # public URL (REST media_import_url path)
-    photo: str | None = None         # local path or base64 image bytes
-    arc: str | None = None
-    provider: str | None = None      # vision provider override
+    photo_url: str | None = Field(
+        default=None, description="Public image URL. Omit to use the bundled demo photo."
+    )
+    photo: str | None = Field(
+        default=None, description="Local path or base64 image bytes. Omit for the demo photo."
+    )
+    arc: str | None = Field(
+        default=None, description="dramatic | observational | reveal | mood-piece"
+    )
+    provider: str | None = Field(
+        default=None, description="Vision provider override: openai | anthropic | gemini | mock"
+    )
 
 
 class PlanShot(BaseModel):
@@ -144,17 +178,18 @@ class HealthResponse(BaseModel):
 
 
 # --- photo input --------------------------------------------------------------
-def _resolve_photo(req: PlanRequest, settings: Settings) -> str:
+def _resolve_photo(photo_url: str | None, photo: str | None, settings: Settings) -> str:
     """URL passes straight through (the adapters' media_import_url path);
     a local path is used as-is; base64 is materialized next to the state DB.
-    No photo at all falls back to the bundled demo asset."""
-    if req.photo_url:
-        return req.photo_url
-    if req.photo:
-        if Path(req.photo).exists():
-            return req.photo
+    No photo at all falls back to the bundled demo asset. Inputs arrive
+    pre-cleaned (_clean), so placeholders never reach here."""
+    if photo_url:
+        return photo_url
+    if photo:
+        if Path(photo).exists():
+            return photo
         try:
-            data = base64.b64decode(req.photo, validate=True)
+            data = base64.b64decode(photo, validate=True)
         except (binascii.Error, ValueError):
             raise HTTPException(
                 status_code=400,
@@ -178,13 +213,26 @@ def _resolve_photo(req: PlanRequest, settings: Settings) -> str:
 async def plan(req: PlanRequest) -> PlanResponse:
     """`da run --review` over HTTP: plan, persist as PLANNING, stop before
     any spend. Execute later via POST /runs/{run_id}/execute."""
-    if req.arc is not None and req.arc not in ARC_LIBRARY:
+    # Junk-as-absent: placeholder values on optional fields behave like unset.
+    arc = _clean(req.arc)
+    provider = _clean(req.provider)
+    photo_url = _clean(req.photo_url)
+    photo_input = _clean(req.photo)
+
+    if arc is not None and arc not in ARC_LIBRARY:
         raise HTTPException(
             status_code=400,
-            detail=f"unknown arc {req.arc!r}; choose from: {', '.join(ARC_LIBRARY)}",
+            detail=f"unknown arc {arc!r}; choose from: {', '.join(ARC_LIBRARY)}",
         )
-    settings = _settings(req.provider)
-    photo = _resolve_photo(req, settings)
+    try:
+        settings = _settings(provider)
+    except ValidationError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown provider {provider!r}; "
+            "choose from: openai, anthropic, gemini, mock",
+        )
+    photo = _resolve_photo(photo_url, photo_input, settings)
     run_id = uuid.uuid4().hex
 
     captured: dict = {}
@@ -197,10 +245,18 @@ async def plan(req: PlanRequest) -> PlanResponse:
     try:
         await pipeline.run(
             photo, req.description, run_id, settings,
-            arc_name=req.arc, plan_only=True, on_plan=collect,
+            arc_name=arc, plan_only=True, on_plan=collect,
         )
     except CostCeilingError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Never a bare "Internal Server Error": surface a structured detail
+        # (planning is pre-spend, so nothing was charged when this trips).
+        raise HTTPException(
+            status_code=500, detail=f"planning failed: {type(e).__name__}: {e}"
+        )
 
     state: RunState = captured["state"]
     return PlanResponse(
