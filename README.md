@@ -8,7 +8,29 @@ routing, drift thresholds, and cost gates come from closed tables. The
 creativity is in the shot content; the process is auditable end to end (every
 attempt, retry, score, and credit is an immutable row in SQLite).
 
-## Quickstart (mock mode — zero credentials)
+> ### ▶ Live demo — [directoragent.onrender.com/docs](https://directoragent.onrender.com/docs)
+>
+> Try it now: send a description to `POST /plan` and watch the pipeline
+> produce a six-shot plan. The demo runs in **mock mode** — free, no
+> credentials, nothing to set up. It lives on Render's free tier, which
+> sleeps when idle: the **first request after a quiet period takes ~30–50s**
+> while the instance wakes, then everything responds normally.
+
+## Running it
+
+**Hosted demo** — [https://directoragent.onrender.com/docs](https://directoragent.onrender.com/docs):
+Swagger UI over the full plan-review lifecycle. `POST /plan` (plan + projected
+cost, no execution) → `POST /runs/{run_id}/execute` (202, runs in the
+background) → `GET /runs/{run_id}` (poll per-shot status, drift, cost).
+
+**Local — web API:**
+
+```bash
+pip install -e ".[web]"
+uvicorn directoragent.web:app        # then open http://127.0.0.1:8000/docs
+```
+
+**Local — CLI (mock quickstart, zero credentials):**
 
 ```bash
 pip install -e ".[dev]"
@@ -70,33 +92,40 @@ routing decision auditable and reproducible.
 (Thresholds are tighter where fidelity matters most — identity for faces —
 and looser where variance is acceptable, e.g. abstract fluids.)
 
-## Real mode — two transports, one adapter
+## Real mode — one adapter, two transports, two Higgsfield products
 
 The Higgsfield adapter is transport-agnostic: it emits tool calls through an
-injectable async `call_tool` seam, and two transports satisfy it.
+injectable async `call_tool` seam (~10 lines in
+[`clients/higgsfield.py`](src/directoragent/clients/higgsfield.py) — the
+`_mcp` method), and two transports satisfy it. They reach **two different
+Higgsfield products with different model catalogs and separate credit pools**:
 
-**(a) Agent-mediated** — inside a Claude session, the Higgsfield MCP connector
-*is* the transport. This is how the first real generation was proven: one
-Wan 2.6 / 5s shot, quoted 13 credits by `get_cost` preflight, billed exactly
-13 credits, with the live response shapes captured and folded back into the
-adapter. Only works inside a Claude session.
+**(a) Agent-mediated MCP** — higgsfield.ai's connector inside a Claude
+session; exposes the **Seedance / Kling / Veo / Wan** catalog (plus-plan
+credits). This is how the first real generation was proven: one Wan 2.6 / 5s
+shot, quoted 13 credits by `get_cost` preflight, billed exactly 13 credits,
+with the live response shapes captured and folded back into the adapter. Only
+works inside a Claude session.
 
-**(b) REST** — authenticated httpx against `platform.higgsfield.ai`
-(`Authorization: Key KEY_ID:KEY_SECRET`; set `HIGGSFIELD_KEY_ID` +
-`HIGGSFIELD_KEY_SECRET`). Runs anywhere — this is the deployable path. The
-transport normalizes REST's flat response envelope to the MCP shapes so the
-adapter never knows which transport it is on.
+**(b) REST** — authenticated httpx against `platform.higgsfield.ai`, the
+cloud.higgsfield.ai product (`Authorization: Key KEY_ID:KEY_SECRET`; set
+`HIGGSFIELD_KEY_ID` + `HIGGSFIELD_KEY_SECRET`); exposes the **DoP / Soul**
+catalog (separate API-credit pool). Runs anywhere — this is the deployable
+path. The transport normalizes REST's flat response envelope to the MCP shapes
+so the adapter never knows which transport it is on. Submit is
+`POST /{model_id}` (e.g. `higgsfield-ai/dop/standard`); one render_class
+(COMPLEX_MOTION → DoP Standard) is mapped as the demonstration and the rest
+are a documented config step. The REST API has **no cost endpoint**, so
+REST-mode plan-review shows **static estimates, not live credits** (actual
+credits reconcile post-submit; `nsfw`/`failed` refund).
 
-> **Current status:** REST is wired to the **confirmed Cloud API contract**
-> (D2): submit is `POST /{model_id}`, e.g. `higgsfield-ai/dop/standard`. Note
-> the REST Cloud API is a **different Higgsfield product** than the MCP
-> connector — it exposes the DoP/Soul catalog (separate credit pool), not
-> Seedance/Kling/Veo/Wan; one render_class (COMPLEX_MOTION → DoP Standard) is
-> mapped as the demonstration and the rest are a documented config step. The
-> REST API has **no cost endpoint**, so REST-mode plan-review shows **static
-> estimates, not live credits** (actual credits reconcile post-submit;
-> `nsfw`/`failed` refund). Stub-tested against the recorded contract shapes;
-> the first paid REST submit is deploy-time. See the deploy-gated table in
+> **Current status: deployed and live** — the hosted demo above serves the
+> full plan → execute → poll lifecycle in mock mode. Real generation is
+> **proven over MCP** (the P12.4 Wan 2.6 shot; its output scores **0.89**
+> CLIP drift against the seed photo, clearing the 0.65 threshold). REST is
+> **wired against the confirmed live Cloud API contract** and stub-tested
+> against the recorded shapes. One optional item remains: a first paid REST
+> generation to close the loop end to end. Details in
 > [docs/TECHNICAL_DOCUMENTATION.md](docs/TECHNICAL_DOCUMENTATION.md) §11.
 
 ## Drift scoring
@@ -151,7 +180,7 @@ Mock mode never imports torch.
 | `HIGGSFIELD_KEY_SECRET` | REST transport key secret |
 | `HIGGSFIELD_BASE_URL` | REST base URL (default `https://platform.higgsfield.ai`) |
 | `HIGGSFIELD_API_KEY` | Legacy/dead — auth is the OAuth connector in agent mode, `KEY_ID:KEY_SECRET` in REST mode |
-| `MOCK_MODE` | `true` = full offline pipeline (same as `--mock`) |
+| `MOCK_MODE` | `true` = full offline pipeline (same as `--mock`). The deploy default (`render.yaml`); the web layer also falls back to mock whenever the REST creds are unset |
 | `MAX_COST_USD` | Budget ceiling checked before fan-out (credits in real mode; the name is a known misnomer) |
 | `STATE_DB_PATH` | SQLite state DB path (default `.directoragent/state.db`) |
 | `LOG_LEVEL` | Python log level (default `INFO`) |
@@ -165,3 +194,10 @@ Copy `.env.example` to `.env` and fill in what you need.
 - [`docs/TECHNICAL_DOCUMENTATION.md`](docs/TECHNICAL_DOCUMENTATION.md) —
   architecture, phase-by-phase design, decision log, and the deploy-gated
   verification table (§11).
+- [`docs/Techno functional overview.md`](docs/Techno%20functional%20overview.md)
+  — the techno-functional overview: what the system does, phase by phase, for
+  a mixed technical/product audience.
+- [`docs/Build_runbook.md`](docs/Build_runbook.md) — the step-by-step build
+  prompts the project was constructed from.
+- [`verification.md`](verification.md) — the verification policy: gates,
+  review cadence, and the reusable adversarial-review prompt.
