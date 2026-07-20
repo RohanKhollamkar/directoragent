@@ -1,0 +1,22 @@
+# Render blueprint (STEP D3b) — deploys the FastAPI demo surface (web.py).
+#
+# Mock mode is the deploy default: MOCK_MODE=true below, and even without it
+# the web layer falls back to mock whenever HIGGSFIELD_KEY_ID/SECRET are
+# unset. For real REST mode, set MOCK_MODE=false and add HIGGSFIELD_KEY_ID +
+# HIGGSFIELD_KEY_SECRET (dashboard env vars, not this file) plus a vision
+# provider key (e.g. ANTHROPIC_API_KEY).
+#
+# Python version comes from .python-version (repo root). Render injects $PORT;
+# the start command binds it — the app itself never hardcodes a port.
+
+services:
+  - type: web
+    name: directoragent
+    runtime: python
+    plan: free
+    buildCommand: pip install -e ".[web]"
+    startCommand: uvicorn directoragent.web:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: MOCK_MODE
+        value: "true"
