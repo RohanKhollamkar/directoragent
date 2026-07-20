@@ -47,6 +47,59 @@ def test_plan_with_just_a_description(monkeypatch, tmp_path):
         assert status["total_cost"] == 0
 
 
+def test_plan_swagger_default_junk_treated_as_absent(monkeypatch, tmp_path):
+    # Swagger's unedited example fills optional fields with the literal
+    # "string". That must behave exactly like omitting them — valid plan,
+    # never a 500 (D3c).
+    body = {
+        "description": "a noir chase",
+        "photo_url": "string",
+        "photo": "string",
+        "arc": "string",
+        "provider": "string",
+    }
+    with _client(monkeypatch, tmp_path) as client:
+        r = client.post("/plan", json=body)
+        assert r.status_code == 200
+        assert len(r.json()["shots"]) == 6
+
+
+def test_plan_empty_string_optionals_treated_as_absent(monkeypatch, tmp_path):
+    body = {"description": "noir", "photo_url": "", "arc": "", "provider": ""}
+    with _client(monkeypatch, tmp_path) as client:
+        r = client.post("/plan", json=body)
+        assert r.status_code == 200
+        assert len(r.json()["shots"]) == 6
+
+
+def test_plan_valid_photo_url_still_passes_through(monkeypatch, tmp_path):
+    # Junk-cleaning must not eat real values.
+    body = {"description": "noir", "photo_url": "https://example.com/photo.png"}
+    with _client(monkeypatch, tmp_path) as client:
+        r = client.post("/plan", json=body)
+        assert r.status_code == 200
+        assert len(r.json()["shots"]) == 6
+
+
+def test_plan_rejects_unknown_provider_with_400(monkeypatch, tmp_path):
+    # A real (non-placeholder) junk value is a clear 400, not a crash.
+    body = {"description": "noir", "provider": "not-a-provider"}
+    with _client(monkeypatch, tmp_path) as client:
+        r = client.post("/plan", json=body)
+        assert r.status_code == 400
+        assert "unknown provider" in r.json()["detail"]
+
+
+def test_plan_malformed_body_is_422_with_detail(monkeypatch, tmp_path):
+    with _client(monkeypatch, tmp_path) as client:
+        r = client.post("/plan", json={"photo_url": "https://x/y.png"})  # no description
+        assert r.status_code == 422
+        assert r.json()["detail"]
+        r = client.post("/plan", json={"description": 123})  # wrong type
+        assert r.status_code == 422
+        assert r.json()["detail"]
+
+
 def test_plan_rejects_unknown_arc(monkeypatch, tmp_path):
     with _client(monkeypatch, tmp_path) as client:
         r = client.post("/plan", json={"description": "x", "arc": "bogus"})
