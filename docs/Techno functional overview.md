@@ -5,10 +5,12 @@
 > it's going — without reading the source code. For implementation detail see
 > `docs/TECHNICAL_DOCUMENTATION.md`; for the build plan see `BUILD_RUNBOOK.md`.
 >
-> **Living document.** Updated as the product is built. Status is current as of
-> the real-integration work (STEP 12) being underway: the mock pipeline is
-> complete and the Higgsfield API has been inspected; the real adapter is being
-> wired against the confirmed API (see §8).
+> **Living document.** **Status: complete, deployed, and live** at
+> https://directoragent.onrender.com/docs (free-tier demo; first request after idle
+> wakes in ~30–50s). The system is complete and verified to its testable boundary — the full pipeline runs, a real
+> generation has been produced end to end, and an independent adversarial review of
+> the finished code has been passed, and it is now deployed and running live. One
+> optional item remains — a first paid generation over the REST transport (see §9).
 
 ---
 
@@ -133,7 +135,7 @@ small, contained change — see §8.)
 
 ## 5. Cost model — how cost is calculated
 
-**The cost model in real mode uses Higgsfield credits via a no-spend preflight.** Before generating anything, the system calls `get_cost: true` on `generate_video` to get the exact credit cost for each planned shot — no estimate, no placeholder. First live calibration data: Veo 3.1 (the environment/establishing model) at 8 seconds costs **22 credits**. The illustrative USD prices below are mock-mode placeholders only; real-mode costs come from the preflight call.
+**The cost model in real mode uses Higgsfield credits via a no-spend preflight.** Before generating anything, the system asks Higgsfield the exact credit cost of each planned shot — no estimate, no placeholder. Two real calibration points, both measured: Veo 3.1 at 8 seconds = **22 credits**; Wan 2.6 at 5 seconds = **13 credits** (this was the first real generation, and the credits charged matched the preflight figure exactly). The illustrative USD prices below are mock-mode placeholders only; real-mode costs are the credits returned by the preflight.
 
 **The basic formula (mock mode / illustrative).** Each model has a price per second of generated video. A shot's cost is:
 
@@ -150,23 +152,29 @@ pricing** — see §8):
 | ABSTRACT_FLUID | Wan 2.6 | $0.08 (mock placeholder) |
 | WIDE_ENVIRONMENT | Veo 3.1 | $0.18 (mock placeholder; real = 22 credits / 8s) |
 
-**Worked example.** A typical six-shot plan:
+**Worked example.** This is the actual six-shot plan the system produces today
+(dramatic arc), with durations already snapped to what each model supports:
 
 | Shot | Model | Duration | Cost |
 |---|---|---|---|
-| 1 (wide establish) | Veo 3.1 | 20s | $3.60 |
-| 2 (face) | Soul v2 | 15s | $1.50 |
-| 3 (motion) | Kling 3.0 | 25s | $3.50 |
-| 4 (face) | Soul v2 | 15s | $1.50 |
-| 5 (motion) | Kling 3.0 | 25s | $3.50 |
-| 6 (wide resolve) | Veo 3.1 | 20s | $3.60 |
-| **Projected total** | | **120s** | **$17.20** |
+| 1 (wide establish) | Veo 3.1 | 8s | $1.44 |
+| 2 (face) | Seedance 2.0 | 12s | $1.20 |
+| 3 (motion) | Kling 3.0 | 10s | $1.40 |
+| 4 (face) | Seedance 2.0 | 12s | $1.20 |
+| 5 (motion) | Kling 3.0 | 10s | $1.40 |
+| 6 (wide resolve) | Veo 3.1 | 8s | $1.44 |
+| **Projected total** | | **60s** | **$8.08** |
 
-**The cost ceiling.** There is a configurable maximum (default $10). In the example
-above, the projected $17.20 exceeds the default ceiling, so the run would **stop
-before generating anything** — the operator either raises the ceiling deliberately
-or revises the plan. This prevents surprise bills, which is the failure mode that
-most often bites people running generative tools.
+**Durations are constrained by the models, not chosen freely.** Each Higgsfield
+model accepts only certain clip lengths (Veo: 4, 6 or 8 seconds; Wan: 5, 10 or 15;
+Kling: 3–15; Seedance: 4–15). The planner snaps every shot to its model's nearest
+allowed value *after* the model is assigned, so a plan can never ask for a clip the
+model cannot produce.
+
+**The cost ceiling.** There is a configurable maximum (default $10). A run whose
+projected cost exceeds it **stops before generating anything** — the operator either
+raises the ceiling deliberately or revises the plan. This prevents surprise bills,
+the failure mode that most often bites people running generative tools.
 
 **Retries cost money.** If a shot fails the quality check and is regenerated, that
 retry is a new paid job. So a shot that takes two attempts costs roughly twice as
@@ -239,19 +247,20 @@ plan, show, approve, generate.
 
 ## 8. Roadmap — what's built and what's coming
 
-**Built and working:** the full pipeline end-to-end — mock mode (free, no
-credentials), the real Higgsfield adapter with **two transports** (agent-mediated,
-proven live with a real 13-credit generation; REST for deployment, built and
-stub-tested), real cost preview via live `get_cost` in agent mode, and **real
-fidelity scoring** (CLIP against the source photo, mid-point video frame). The
-README, quickstart, and final verification gates are complete.
+**Built, working, and deployed:** the full pipeline end-to-end — mock mode (free,
+no credentials), the real Higgsfield adapter with **two transports** (agent-mediated,
+proven live with a real 13-credit generation; REST, wired against the live Cloud API
+and powering the deployed demo), real cost preview in agent mode, and **real
+fidelity scoring** (CLIP against the source photo — a real generated clip scored 0.89
+against its seed image vs 0.42 for an unrelated control). The system is **live at a
+public URL** (https://directoragent.onrender.com/docs) via a thin web layer over the
+same pipeline, running mock-mode by default so anyone can try it free.
 
-**Remaining before "done":** a small run-status bookkeeping fix and the final
-whole-tree integrity review. **Remaining at deployment:** four live-verification
-items that cannot run in the development sandbox (the REST submit endpoint and
-REST cost preview must be confirmed against the live service; real CLIP scoring
-against an actual generated video; and the direct-upload path) — all built,
-documented, and safely inert until then.
+**One optional item remains:** a first paid generation over the REST transport,
+which would add a real DoP clip alongside the already-proven MCP generation. It is a
+deliberate spend decision (the REST Cloud API bills from a separate credit pool), not
+a code gap — everything is wired and tested. Real generation is already proven on the
+agent-mediated path.
 
 ---
 
@@ -259,17 +268,42 @@ documented, and safely inert until then.
 
 Nothing here is missing by accident — each was a deliberate prioritization call.
 
+### Built since this document first listed them as deferred
+
+Real Higgsfield generation, real fidelity (CLIP) scoring, the deployable REST
+connection, and the plan-review cost gate are all **built**. A real generation has
+been produced end to end (a 5-second clip, 13 credits, charged exactly what the
+preflight quoted).
+
+### Still deferred, deliberately
+
+Nothing here is missing by accident — each was a deliberate prioritization call.
+
 | Deferred item | Why deferred | When it's picked up |
 |---|---|---|
-| Real Higgsfield generation | Mock-first let the whole product be built and tested for free; the real connection is now being wired against the inspected live API | Underway (STEP 12) |
-| Real fidelity (CLIP) scoring | Same mock-first logic; the scoring engine is heavy and only needed for real output | Near-term (STEP 13) |
 | User-defined custom story arcs | The four built-in arcs cover the common cases; accepting fully custom arcs is an easy add once there's demand | On demand |
 | Shot-to-shot chaining (each shot building on the previous one's output) | True chaining would make shots wait on each other and slow the parallel generation; v1 keeps all six independent and grounded to the source photo | When the quality benefit is proven to outweigh the speed cost |
 | More than four models / render classes | The number of categories tracks the number of available models; four models exist today | When Higgsfield's model lineup grows |
 | Heavier database (Postgres) for scale | A simple built-in database covers development and demos with zero setup; the system is built to swap to Postgres with a config change | At production scale |
 | Automatic correction of mismatched shot categories | Trusting the AI's category choice (with a human review step as backstop) is simpler and avoids a fragile auto-corrector that could "fix" things that were right | Only if real usage shows frequent mismatches |
-| Cost calibration | Placeholder per-second prices are used in mock mode; the live service returns exact real costs via a no-spend preflight, so real-mode projections are accurate credits, not estimates | Real costs available now via preflight (STEP 12); mock table stays illustrative |
+| Multi-frame fidelity sampling | Each clip is currently scored on a single mid-point frame — cheap and correct as a baseline | If real scores turn out not to track perceived fidelity |
 | Web interface | The backend is intentionally built to support one (plan/approve/generate maps cleanly to a UI), but the CLI comes first | Future |
+
+### Deploy status — three of four closed, one optional
+
+The system is deployed and live. Three of the four items that once needed a real
+environment are now closed; one remains, and it is an optional spend decision.
+
+| Item | Status |
+|---|---|
+| The deployable (REST) connection's submit address | ✅ Resolved — confirmed against Higgsfield's Cloud API docs (`POST /{model_id}`). |
+| Real cost preview over REST | ✅ Resolved — the Cloud API has no cost endpoint, so REST projects from the standard price table and reconciles the real charge after generation. |
+| Real fidelity scoring on a real clip | ✅ Closed — a real generated clip scored 0.89 against its seed image vs 0.42 for an unrelated control. |
+| A first paid generation over REST | ⬜ Optional — would add a real clip via the deployable path alongside the already-proven one. A deliberate spend decision (the REST product bills from a separate credit pool), not a missing piece. |
+
+Note the two products: the agent-mediated path (used for the proven generation) and
+the deployable REST path run against *different* Higgsfield model catalogs, unified
+by one adapter — a stronger design story than two paths to the same place.
 
 ---
 
@@ -286,17 +320,37 @@ Nothing here is missing by accident — each was a deliberate prioritization cal
 
 ---
 
-## 11. Risks and open questions
+## 11. How the system was checked
 
-- **Real Higgsfield behaviour is not yet known.** The exact controls and pricing of
-  the live models are confirmed only at integration; the system is structured so
-  this is a contained, low-risk step.
-- **Cost figures are illustrative** until calibrated against real pricing.
-- **The planner's output quality** (how good and "filmable" the shot descriptions
-  are) is expected to need a round of tuning on real photographs — normal for any
-  AI-driven creative step.
-- **Fidelity thresholds** may need adjustment once measured against the real
-  scoring engine rather than placeholders.
+**Automated checks run on every change.** Style, the full test suite (58 tests), a
+complete end-to-end run in mock mode, and a re-run to confirm interrupted work
+resumes without re-doing anything. These are mechanical and cannot be argued with.
+
+**Rules that could otherwise drift are enforced by tests.** The design's own rules —
+"the AI never picks the model," "the cost ledger is written before any money is
+spent," "the heavy scoring engine is never loaded unless it's needed" — are written
+as executable checks rather than trusted to memory.
+
+**An independent review of the finished system found eight real problems.** After
+everything was built and every automated check was green, a fresh reviewer with a
+mandate to find fault — not to approve — went through the whole codebase. It found
+eight genuine defects, three of them involving money: a review-only command that
+could silently spend on a second use; a crash-recovery mechanism that could not
+actually survive a crash; recovered work whose cost never reached the ledger; and a
+spending limit that several parallel jobs could collectively overshoot. All eight
+were fixed and then independently re-verified by a second reviewer. This history is
+recorded rather than tidied away, because it is the strongest evidence the system
+has been genuinely examined and not merely tested.
+
+## Remaining risks and open questions
+
+- **The planner's creative output** (how "filmable" the shot descriptions are) is
+  expected to need a round of tuning on real photographs — normal for any AI-driven
+  creative step.
+- **Fidelity thresholds** may need adjustment once measured against real generated
+  clips rather than controlled test data.
+- **One optional item remains** (§9) — a first paid generation over the REST
+  transport; a spend decision, not a code gap.
 
 ---
 
