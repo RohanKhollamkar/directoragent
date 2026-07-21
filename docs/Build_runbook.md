@@ -43,7 +43,12 @@ stop" so each step is reviewable before merge.
 | P14 | README + .env.example + TODO sweep + final gates | ✅ |
 | P14.1 | Run-status lifecycle fix (PLANNING→EXECUTING→COMPLETE written to DB) | ✅ |
 | — | Milestone full-integrity sweep (VERIFICATION.md, whole-tree) | ▶ Final gate |
-| — | Deploy-gated live items (P12.5-live ×2, P13-live, _upload_local) | ⬜ At deploy |
+| P13-live | Real CLIP verified on a real .mp4 (0.89 seed vs 0.42 control) | ✅ |
+| D2 | REST transport wired against the live Cloud API contract (POST /{model_id}, flat envelope, cost fallback) | ✅ |
+| D3a | Thin FastAPI web layer (plan/execute/status over HTTP, non-blocking) | ✅ |
+| D3b | Deployed to Render (buildpack, render.yaml, mock-mode default) — LIVE at directoragent.onrender.com | ✅ |
+| D3c | Web input hardening (executable Swagger example, structured errors) | ✅ |
+| D4 | First paid REST generation (one real DoP shot) | ⬜ Optional |
 
 > **Execution note:** the original P12/P13/P14 prompts below are the pre-discovery
 > versions, retained as historical record. P12 was actually executed as
