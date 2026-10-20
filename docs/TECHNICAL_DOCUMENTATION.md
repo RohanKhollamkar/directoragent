@@ -705,15 +705,17 @@ approved `protocols.py` reopening; 58 tests green; `import directoragent` torch-
 ### Deploy-gated live verification — status
 
 Three of the original four items are now CLOSED. The system is deployed and live at
-**https://directoragent.onrender.com/docs** (mock-mode default). One optional item
-remains: a first paid generation over the REST transport.
+**https://directoragent.onrender.com/docs** (mock-mode default). Two items remain
+open, and a real six-shot run over REST needs **both**: funded REST credits and
+REST model mappings for the three render_classes that have none today.
 
 | Marker | Status |
 |---|---|
 | `TODO(P12.5-live)` #1 (submit endpoint) | ✅ **RESOLVED** against Higgsfield's authenticated Cloud API docs. Real route is `POST /{model_id}` (e.g. `higgsfield-ai/dop/standard`), not the earlier `/v2/generate` placeholder. Wired in D2. |
 | `TODO(P12.5-live)` #2 (REST get_cost) | ✅ **RESOLVED** — the Cloud API genuinely has no cost endpoint (only submit/status/cancel exist). REST projects cost from the static COST_PER_SECOND table and reconciles actual credits post-submit; `nsfw`/`failed` refund, so reconciliation reads the real terminal status. Wired in D2. |
 | `TODO(P13-live)` (real CLIP) | ✅ **CLOSED** — ran the real model: seed image vs its generated `.mp4` = **0.89** (clears ABSTRACT_FLUID 0.65 with margin, not a suspicious ~1.0); unrelated white-PNG control = **0.42** (proves discrimination). Note: weight download may route through the Xet CDN (`cas-server.xethub.hf.co`); set `HF_HUB_DISABLE_XET=1` or allowlist that host in restricted networks. |
-| First paid REST submit (`_upload_local` + one real DoP shot) | ⬜ **OPTIONAL** — the only remaining item. Would add a real DoP clip via the REST path alongside the already-proven MCP generation, and exercise the presigned-PUT upload end to end. Deferred as a deliberate spend decision, not a code gap. Requires funding cloud.higgsfield.ai API credits (a separate credit pool from the MCP plus-plan). |
+| First paid REST submit (`_upload_local` + one real DoP shot) | ⬜ **OPEN (spend)** — would add a real DoP clip via the REST path alongside the already-proven MCP generation, and exercise the presigned-PUT upload end to end. Requires funding cloud.higgsfield.ai API credits (a separate credit pool from the MCP plus-plan). On its own this proves one COMPLEX_MOTION shot, not a full run. |
+| REST model mapping for FACE, WIDE_ENVIRONMENT, ABSTRACT_FLUID | ⬜ **OPEN (code/config)** — `REST_MODEL_CATALOG` (`clients/higgsfield_rest_transport.py:113-118`) maps only `COMPLEX_MOTION → higgsfield-ai/dop/standard`. A shot of any other render_class raises `HiggsfieldError("render_class … has no REST model mapping")` at submit. The plan-review preflight does not catch it, because REST cost is a static estimate that never consults the mapping. Every built-in arc includes FACE and WIDE_ENVIRONMENT beats, so a full six-shot run cannot complete over REST until DoP/Soul models are chosen and added for these three classes. |
 
 **Two-catalog reality (confirmed at deploy):** the MCP connector (higgsfield.ai)
 exposes Seedance/Kling/Veo/Wan; the REST Cloud API (cloud.higgsfield.ai) exposes
@@ -728,6 +730,31 @@ Full render_class→DoP mapping is a documented config step.
 `reconcile` cannot recover an orphaned job over REST. A crash in the SUBMITTING
 window followed by a resume fails loudly over REST rather than silently
 double-charging — the safer failure, documented rather than hidden.
+
+### Known issues (unresolved)
+
+**Partial charge when one shot's submit fails mid-batch.** `executor.run_all`
+fans out with `asyncio.gather(..., return_exceptions=False)`. When `hf.submit()`
+raises past the adapter's transient retries, `run_shot`
+(`phases/executor.py:163-180`) releases that shot's budget reservation, closes
+its attempt as `FAILED_ERROR`, and re-raises. `gather` then propagates that
+first exception to `pipeline.run` immediately. Consequences:
+
+- Sibling shots whose jobs were already submitted have been billed (their
+  `add_cost` has run) but are not awaited to a terminal state. `gather` does
+  not cancel them, `pipeline.run`'s `finally` closes the store under them, and
+  `asyncio.run()` (in both `cli.py` and `web.py`) cancels them on exit. Their
+  attempts stay `RUNNING`.
+- Shots still waiting on the semaphore never submit.
+- The failing shot does not enter its quality-retry loop.
+- The run stays `EXECUTING`; nothing is assembled.
+
+`da resume` re-polls the `RUNNING` attempts rather than resubmitting them, so
+the paid jobs are recoverable. But a submit failure that repeats on resume
+(e.g. an unmapped REST render_class, see the status table above) aborts the
+batch the same way each time. Whether a submit failure should abort the run,
+or be contained to its shot, is an open design decision; it is recorded here
+and not yet resolved.
 
 ### The deploy (D-series)
 

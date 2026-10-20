@@ -319,10 +319,17 @@ VISION_MODEL=                 # blank = provider default
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 GOOGLE_API_KEY=
-HIGGSFIELD_API_KEY=
+HIGGSFIELD_KEY_ID=             # REST transport: auth is `Authorization: Key KEY_ID:KEY_SECRET`
+HIGGSFIELD_KEY_SECRET=         # REST is selected in real mode only when BOTH are set
+HIGGSFIELD_BASE_URL=https://platform.higgsfield.ai   # the default; omit unless overriding
 MAX_COST_USD=10.0
 LOG_LEVEL=INFO
 ```
+`HIGGSFIELD_API_KEY` is legacy and unused. config.py still reads it
+(`higgsfield_api_key: str | None = None  # legacy/agent-mediated; dead over REST`)
+and passes it to `HiggsfieldClient`, which stores it as `self._api_key` and never
+reads it again. Setting it has no effect: agent-mediated mode authenticates
+through the OAuth connector, REST mode through `HIGGSFIELD_KEY_ID`/`_SECRET`.
 
 ---
 

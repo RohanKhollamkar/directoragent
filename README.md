@@ -22,13 +22,50 @@ scoring, quality-retry, assembly — with **no API keys, no cost, in under 10
 seconds**. CI runs exactly this. Mock and real mode share every line of phase
 code; only the injected clients differ.
 
+## Try the full demo
+
+```bash
+bash scripts/demo.sh
+```
+
+One mock-mode script (no credentials, no cost) walks every path in order:
+
+| Step | What it shows |
+|---|---|
+| A.4 | A full six-shot run: shot grid, first-try yield, total cost |
+| B.1–B.2 | `--review` prints the plan and projected cost, then stops: run is `planning`, every shot `pending`, $0 spent |
+| B.3–B.4 | `da resume` executes the reviewed plan: run is `complete` |
+| B.5 | A second `resume` resubmits nothing: same job ids, same cost |
+| C.1 | The quality-retry path, via `scripts/retry_demo.py` |
+
+Run ids are timestamped, so the script can be re-run freely. In a Claude Code
+session, the `/demo` slash command (`.claude/commands/demo.md`) runs the same
+script and summarises the result.
+
+`scripts/retry_demo.py` drives one FACE shot through the executor with
+`MockDriftScorer(fail_first=1)`, so attempt 1 is forced below the 0.78
+threshold and attempt 2 passes. Each attempt is a new job, a new attempt row,
+and a new charge:
+
+```
+$ python scripts/retry_demo.py
+retry-path demo: attempt 1 is forced to fail drift (MockDriftScorer fail_first=1, threshold 0.78)
+att  idem_key             status        drift   cost  job_id
+------------------------------------------------------------------------
+  1  retry-demo:shot_01:1 failed_drift  0.500   1.00  mock-job-retry-demo:shot_01:1
+  2  retry-demo:shot_01:2 passed        0.820   1.00  mock-job-retry-demo:shot_01:2
+
+run total_cost: 2.00
+1 shot, 2 attempts, first-try yield 0%, cost = 2 submissions
+```
+
 ## Plan review before spend
 
 `--review` plans, persists the run as `PLANNING`, prints every shot's prompt /
 model / cost, and stops. `da resume <run_id>` executes it later:
 
 ```
-$ da run assets/test.png "a lone figure on a neon street" --mock --review
+$ da run assets/test.png "a lone figure on a neon street" --mock --review --run-id demo-review
 run_id: demo-review
 === PLAN  run_id=demo-review ===
 arc: dramatic
