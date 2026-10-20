@@ -19,6 +19,10 @@ CLIP drift detection on Phase 4.
 - Fan-out: `asyncio.gather` + `Semaphore(MAX_CONCURRENT_JOBS=6)`
 - Retry: two separate mechanisms — see INVARIANTS below
 - Deploy target: Railway / Render / Fly (always-on container, never serverless)
+- Lint: ruff pinned `>=0.17,<0.18`, `select = ["E4","E7","E9","F"]`, target py311.
+  UP, I, C4, BLE and PLW are intentionally NOT enforced: enabling them would
+  require edits to frozen files (I001 in routing.py and vision_providers.py),
+  and UP017 conflicts with the `datetime.now(timezone.utc)` convention.
 
 ---
 
