@@ -31,3 +31,6 @@ da status "$GATE_ID"
 
 echo "== B.5  resume again (expect no resubmission, same job ids and cost)"
 da resume "$GATE_ID" --mock
+
+echo "== C.1  retry path: attempt 1 forced to fail drift, attempt 2 passes"
+"$PY" scripts/retry_demo.py
