@@ -17,6 +17,12 @@ da() { "$PY" -m directoragent.cli "$@"; }
 echo "== A.4  full mock run (run_id=${RUN_ID})"
 da run "$PHOTO" "$SCENE" --mock --run-id "$RUN_ID"
 
+echo "== A.5  inputs and plan for the A.4 run (reference photo, description, vision, planner)"
+"$PY" scripts/show_plan.py "$RUN_ID"
+
+echo "== A.6  per-shot ledger for the A.4 run (attempts, status, last-attempt cost, total cost)"
+"$PY" scripts/shot_ledger.py "$RUN_ID"
+
 echo "== B.1  plan only, --review gate (run_id=${GATE_ID})"
 da run "$PHOTO" "$SCENE" --mock --review --run-id "$GATE_ID"
 
@@ -31,6 +37,9 @@ da status "$GATE_ID"
 
 echo "== B.5  resume again (expect no resubmission, same job ids and cost)"
 da resume "$GATE_ID" --mock
+
+echo "== B.6  per-shot ledger after both resumes (expect 1 attempt per shot)"
+"$PY" scripts/shot_ledger.py "$GATE_ID"
 
 echo "== C.1  retry path: attempt 1 forced to fail drift, attempt 2 passes"
 "$PY" scripts/retry_demo.py

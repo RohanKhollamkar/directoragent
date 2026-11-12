@@ -33,10 +33,16 @@ One mock-mode script (no credentials, no cost) walks every path in order:
 | Step | What it shows |
 |---|---|
 | A.4 | A full six-shot run: shot grid, first-try yield, total cost |
+| A.5 | Inputs and plan (`scripts/show_plan.py`): reference photo and description, the vision SceneModel, then the planner's arc and per-shot beat, render_class, routed model, drift threshold, duration and cost estimate |
+| A.6 | Per-shot ledger (`scripts/shot_ledger.py`): attempts, success / failed, last-attempt cost, total cost |
 | B.1–B.2 | `--review` prints the plan and projected cost, then stops: run is `planning`, every shot `pending`, $0 spent |
 | B.3–B.4 | `da resume` executes the reviewed plan: run is `complete` |
 | B.5 | A second `resume` resubmits nothing: same job ids, same cost |
+| B.6 | The ledger again: still one attempt per shot |
 | C.1 | The quality-retry path, via `scripts/retry_demo.py` |
+
+In mock mode the vision output and the plan are canned: the description is
+recorded, but the scene and plan are the same for any input.
 
 Run ids are timestamped, so the script can be re-run freely. In a Claude Code
 session, the `/demo` slash command (`.claude/commands/demo.md`) runs the same
